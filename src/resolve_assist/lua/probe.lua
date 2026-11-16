@@ -76,6 +76,8 @@ if has_resolve then
   if type(fu) == "userdata" or type(fu) == "table" then
     report.checks.path_userdata = safe("MapPath UserData", function() return fu:MapPath("UserData:") end)
     report.checks.path_temp = safe("MapPath Temp", function() return fu:MapPath("Temp:") end)
+    report.checks.path_scripts = safe("MapPath Scripts", function() return fu:MapPath("Scripts:") end)
+    report.checks.path_luts = safe("MapPath LUTs", function() return fu:MapPath("LUTs:") end)
   end
 
   local pm = safe("GetProjectManager", function() return r:GetProjectManager() end)
@@ -179,24 +181,41 @@ end
 
 local home = home_dir()
 local sep = package and package.config and package.config:sub(1, 1) or "/"
-local dir = home and (home .. sep .. ".resolve-assist") or nil
-report.checks.report_dir = dir or "unknown"
-local json_text = encode(report)
-local written = nil
+-- Candidate folders. The Mac App Store build is sandboxed: HOME is its container,
+-- but Movies/Pictures inside the container may be links to the real user folders.
+local dirs = {}
+if home then
+  dirs[#dirs + 1] = home .. sep .. ".resolve-assist"
+  dirs[#dirs + 1] = home .. sep .. "Movies" .. sep .. "resolve-assist"
+  dirs[#dirs + 1] = home .. sep .. "Pictures" .. sep .. "resolve-assist"
+end
+report.checks.home = home or "unknown"
+report.checks.sandboxed = (home and home:find("/Library/Containers/", 1, true)) and true or false
+local written = {}
 
-if dir and io and io.open then
+local function try_io(dir)
+  if not (io and io.open) then return false end
   local f = io.open(dir .. sep .. "probe-report.json", "w")
-  if f then
-    f:write(json_text); f:close(); written = dir .. sep .. "probe-report.json (io)"
-  end
+  if not f then return false end
+  f:write(encode(report)); f:close()
+  return true
 end
-if not written and dir and type(bmd) == "table" and bmd.writefile then
-  local ok = pcall(function()
+
+local function try_bmd(dir)
+  if not (type(bmd) == "table" and bmd.writefile) then return false end
+  return pcall(function()
     if bmd.createdir then bmd.createdir(dir) end
-    bmd.writefile(dir .. sep .. "probe-report.lua", { json = json_text })
+    bmd.writefile(dir .. sep .. "probe-report.lua", { json = encode(report) })
   end)
-  if ok then written = dir .. sep .. "probe-report.lua (bmd.writefile)" end
 end
+
+for _, dir in ipairs(dirs) do
+  if try_io(dir) then written[#written + 1] = dir .. " (io)"
+  elseif try_bmd(dir) then written[#written + 1] = dir .. " (bmd.writefile)" end
+end
+report.checks.report_written_to = written
+local json_text = encode(report)
+written = (#written > 0) and table.concat(written, ", ") or nil
 
 print("")
 print("==== resolve-assist probe ====")

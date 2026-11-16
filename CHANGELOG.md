@@ -2,6 +2,15 @@
 
 All notable changes are listed here. Format: [Keep a Changelog](https://keepachangelog.com), versions: SemVer.
 
+## [Unreleased]
+
+### Fixed
+- Probe now works with the sandboxed Mac App Store build of Resolve: reports to ~/Movies or ~/Pictures, records `sandboxed`, Scripts/LUT paths.
+- `sips` no longer upscales small stills; original size is reported.
+
+### Added
+- Test that runs probe.lua in a Lua runtime (lupa) against a fake Resolve, including the sandboxed and no-`io` cases.
+
 ## [0.1.0] - 2026-11-16
 
 ### Added

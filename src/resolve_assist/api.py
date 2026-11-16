@@ -192,9 +192,9 @@ def install_probe() -> dict:
     scripts.mkdir(parents=True, exist_ok=True)
     dest = scripts / PROBE_SCRIPT_NAME
     dest.write_text(source, encoding="utf-8")
-    state = state_dir()
-    state.mkdir(parents=True, exist_ok=True)
-    os.chmod(state, 0o700)
+    for d in probe_dirs():
+        d.mkdir(parents=True, exist_ok=True)
+        os.chmod(d, 0o700)
     return {
         "installed": str(dest),
         "next": "Open a project in Resolve (ideally with a clip on the timeline), then "
@@ -202,12 +202,21 @@ def install_probe() -> dict:
     }
 
 
+def probe_dirs() -> list[Path]:
+    """Where the probe may write. The App Store (sandboxed) Resolve can usually only
+    reach ~/Movies or ~/Pictures, so the report may land there."""
+    if os.environ.get("RESOLVE_ASSIST_HOME"):
+        return [state_dir()]  # explicit override: one location only (also keeps tests hermetic)
+    home = Path.home()
+    return [state_dir(), home / "Movies" / "resolve-assist", home / "Pictures" / "resolve-assist"]
+
+
 def probe_report() -> dict:
     """Read the probe result: JSON (io route) or Lua table (bmd.writefile fallback)."""
-    for name, parser in ((PROBE_REPORT, json.loads), ("probe-report.lua", _parse_lua_json_field)):
-        path = state_dir() / name
-        if not path.exists():
-            continue
+    candidates = [d / n for d in probe_dirs() for n in (PROBE_REPORT, "probe-report.lua")]
+    existing = [c for c in candidates if c.exists()]
+    for path in sorted(existing, key=lambda c: c.stat().st_mtime, reverse=True):
+        parser = json.loads if path.suffix == ".json" else _parse_lua_json_field
         if path.stat().st_size > 2 * 1024 * 1024:
             raise ValueError("probe report unexpectedly large")
         return {"found": True, "path": str(path), "report": parser(path.read_text(encoding="utf-8"))}
