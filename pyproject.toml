@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "resolve-assist"
+version = "0.1.0"
+description = "Local AI color assistant for DaVinci Resolve Free: analyze, balance, match, LUTs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.12,<2"]
+
+[project.scripts]
+resolve-assist = "resolve_assist.cli:main"
+resolve-assist-mcp = "resolve_assist.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+resolve_assist = ["lua/*.lua"]
