@@ -43,6 +43,7 @@ class Stats:
     warnings: list[str] = field(default_factory=list)
     confidence: float = 1.0
     decoder: str = ""
+    borders: dict | None = None  # letterbox/pillarbox bars that were excluded
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -108,7 +109,55 @@ def analyze_pixels(pixels: list[RGB]) -> dict:
     }
 
 
-def analyze_image(img: Image, decoder: str = "") -> Stats:
+BORDER_MAX = 0.02  # a row/column whose brightest pixel is below this counts as a black bar
+
+
+def crop_borders(img: Image) -> tuple[Image, dict | None]:
+    """Remove letterbox/pillarbox bars (e.g. vertical phone video in a 16:9 timeline).
+
+    Bars must be near-black across the whole row/column and touch an edge.
+    Returns the cropped image and a description, or the original and None.
+    """
+    w, h, px = img.width, img.height, img.pixels
+
+    def col_dark(x: int) -> bool:
+        return all(max(px[y * w + x]) < BORDER_MAX for y in range(h))
+
+    def row_dark(y: int) -> bool:
+        return all(max(p) < BORDER_MAX for p in px[y * w:(y + 1) * w])
+
+    left = 0
+    while left < w - 1 and col_dark(left):
+        left += 1
+    right = w - 1
+    while right > left and col_dark(right):
+        right -= 1
+    top = 0
+    while top < h - 1 and row_dark(top):
+        top += 1
+    bottom = h - 1
+    while bottom > top and row_dark(bottom):
+        bottom -= 1
+    cw, ch = right - left + 1, bottom - top + 1
+    # Ignore tiny trims (noise) and refuse to crop to almost nothing (a dark scene, not bars).
+    if (cw == w and ch == h) or cw * ch < 0.1 * w * h or (w - cw < 0.02 * w and h - ch < 0.02 * h):
+        return img, None
+    cropped = [px[y * w + x] for y in range(top, bottom + 1) for x in range(left, right + 1)]
+    sx = img.source_width / w if img.source_width else 1.0
+    sy = img.source_height / h if img.source_height else 1.0
+    info = {
+        "kind": "pillarbox" if cw < w and ch == h else "letterbox" if ch < h and cw == w else "windowbox",
+        "removed_pct": round(100 * (1 - cw * ch / (w * h)), 1),
+        "picture_size_estimate": [round(cw * sx), round(ch * sy)],
+    }
+    return Image(cw, ch, cropped, img.source_width, img.source_height), info
+
+
+def analyze_image(img: Image, decoder: str = "", crop: bool = True, border: dict | None = None) -> Stats:
+    """Measure an image. With crop=True black bars are removed first; callers that
+    already cropped (to reuse the cropped pixels) pass crop=False and the border info."""
+    if crop:
+        img, border = crop_borders(img)
     core = analyze_pixels(img.pixels)
     used_neutral = core.pop("used_neutral")
     stats = Stats(
@@ -118,9 +167,12 @@ def analyze_image(img: Image, decoder: str = "") -> Stats:
         source_height=img.source_height,
         samples=len(img.pixels),
         decoder=decoder,
+        borders=border,
         **core,
     )
     _assess(stats, used_neutral)
+    if border:
+        stats.warnings.insert(0, f"ignored black bars ({border['kind']}, {border['removed_pct']}% of frame)")
     return stats
 
 

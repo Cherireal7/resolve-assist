@@ -5,6 +5,8 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 ## [Unreleased]
 
 ### Fixed
+- Analysis ignores letterbox/pillarbox black bars (found on real footage: vertical phone video in a 16:9 timeline had 68% bars and skewed every measurement).
+- A single number passed as text (e.g. `--offset -0.01`) now applies to all channels.
 - Probe now works with the sandboxed Mac App Store build of Resolve: reports to ~/Movies or ~/Pictures, records `sandboxed`, Scripts/LUT paths.
 - `sips` no longer upscales small stills; original size is reported.
 

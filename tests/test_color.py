@@ -35,6 +35,7 @@ class CDLTests(unittest.TestCase):
 
     def test_parsing_and_validation(self):
         self.assertEqual(CDL.make(slope="1.1, 1.0 0.9").slope, (1.1, 1.0, 0.9))
+        self.assertEqual(CDL.make(offset="-0.01").offset, (-0.01, -0.01, -0.01))
         with self.assertRaises(ValueError):
             CDL.make(slope=[1, 2])
         with self.assertRaises(ValueError):
@@ -141,3 +142,27 @@ class LookTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BorderTests(unittest.TestCase):
+    def test_pillarbox_is_cropped(self):
+        from resolve_assist.analyze import crop_borders
+        w, h, px = scene(40, 60)
+        W = 120  # 40-px picture centered in a 120-px wide black frame
+        framed = []
+        for y in range(h):
+            framed += [(0.0, 0.0, 0.0)] * 40 + px[y * w:(y + 1) * w] + [(0.0, 0.0, 0.0)] * 40
+        img, info = crop_borders(Image(W, h, framed, 1920, 960))
+        self.assertEqual((img.width, img.height), (40, 60))
+        self.assertEqual(info["kind"], "pillarbox")
+        self.assertEqual(info["picture_size_estimate"], [640, 960])
+        stats = analyze_image(Image(W, h, framed, W, h))
+        self.assertLess(stats.clip_black_pct, 5)
+        self.assertTrue(stats.warnings[0].startswith("ignored black bars"))
+
+    def test_dark_scene_is_not_cropped(self):
+        from resolve_assist.analyze import crop_borders
+        dark = [(0.005, 0.005, 0.005)] * (50 * 50)
+        img, info = crop_borders(Image(50, 50, dark, 50, 50))
+        self.assertIsNone(info)
+        self.assertEqual(img.width, 50)

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from . import __version__
-from .analyze import Stats, analyze_image
+from .analyze import Stats, analyze_image, crop_borders
 from .color.cdl import CDL
 from .color.correct import auto_balance, match_shot, verify
 from .color.looks import LOOKS, list_looks, look_transform
@@ -37,7 +37,8 @@ PROBE_REPORT = "probe-report.json"
 def _load(path: str, time_seconds: float | None) -> tuple[Image, Stats]:
     p = check_input_media(path)
     img, decoder = decode(p, time_seconds)
-    return img, analyze_image(img, decoder)
+    img, border = crop_borders(img)  # balance/preview/verify all work on the real picture
+    return img, analyze_image(img, decoder, crop=False, border=border)
 
 
 def analyze(path: str, time_seconds: float | None = None) -> dict:

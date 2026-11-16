@@ -32,8 +32,8 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
 def _triple(value: float | Sequence[float] | str, name: str) -> RGB:
     """Accept 1.1, [1.1, 1.0, 0.9] or "1.1 1.0 0.9"."""
     if isinstance(value, str):
-        parts = value.replace(",", " ").split()
-        value = [float(p) for p in parts]
+        parts = [float(p) for p in value.replace(",", " ").split()]
+        value = parts[0] if len(parts) == 1 else parts  # "0.1" means 0.1 for all channels
     if isinstance(value, (int, float)):
         v = float(value)
         return (v, v, v)
