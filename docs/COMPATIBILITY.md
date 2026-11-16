@@ -5,7 +5,7 @@
 | Python | 3.10 (CI), 3.15.2 (dev) | Core is stdlib-only |
 | macOS | dev machine | sips fallback available |
 | Linux | CI | ffmpeg or built-in PNG decoder |
-| Resolve Free 21.2.0.6 (macOS, App Store) | probe v1 run 2026-11-16 | Sandboxed; see below |
+| Resolve Free 21.2.0.6 (macOS, App Store) | probe v2 run 2026-11-16 | Sandboxed; color API present; see below |
 
 ## Mac App Store build (found 2026-11-16)
 
@@ -40,10 +40,12 @@ Run by pasting into Workspace → Console (the Console has no language switch: L
 | Method-existence control | reliable (unknown names return `nil`) |
 | Project | `ExportCurrentFrameAsStill`, `GetGallery`, `RefreshLUTList`, `Get/SetSetting`: present |
 | Timeline | `GrabStill`, `GrabAllStills`, `GetCurrentVideoItem`, `Export`, `Get/SetCurrentTimecode`: present |
-| Clip color methods (`SetCDL`, `SetLUT`, `GetNodeGraph`) | **not checked yet**: playhead was past the last clip |
-| Report file | not written (v1 only knew `io`/`bmd.writefile`) → probe v2 uses `bmd.writestring` |
+| Clip (TimelineItem) | `SetCDL`, `SetLUT`, `GetLUT`, `GetNodeGraph`, `CopyGrades`, `ExportLUT`, `AddVersion`, `LoadVersionByName`, `GetColorGroup`: **present**; `ApplyGradeFromDRX` not on the item (it is on the graph) |
+| Node graph | `SetLUT`, `GetLUT`, `ApplyGradeFromDRX`, `ApplyArriCdlLut`, `ResetAllGrades`, `SetNodeEnabled`, `GetNodeLabel`, `GetToolsInNode`: **present** |
+| Report file | v2: `bmd.writestring` **blocked** in `~/.resolve-assist`, `~/Movies/…`, `~/Pictures/…` and the container's (non-existent) Movies/Pictures subfolders |
 
 Implications for Phase 2:
 - Transport must use `bmd.writestring`/`readstring` (no `io`), polling a shared folder.
-- Which folder the sandbox shares with the outside world is tested by probe v2 (`write_tests`).
-- `ExportCurrentFrameAsStill` would let the AI grab frames itself (tested by probe v2).
+- The color API needed for Phase 2 exists: apply LUT (`SetLUT`), CDL (`SetCDL`), PowerGrades (`graph:ApplyGradeFromDRX`), versions for undo (`AddVersion`/`LoadVersionByName`).
+- Blocker: a folder both Resolve (sandboxed) and our server can use. Next test: `~/Documents/resolve-assist/bridge` and the container `tmp/`;
+  if blocked, grant access by adding the folder in Resolve (Preferences → Media Storage) so the sandbox gets a user-approved bookmark.
