@@ -5,7 +5,7 @@
 | Python | 3.10 (CI), 3.15.2 (dev) | Core is stdlib-only |
 | macOS | dev machine | sips fallback available |
 | Linux | CI | ffmpeg or built-in PNG decoder |
-| Resolve Free 21.2.0 (macOS) | **pending probe** | Fill in from `probe-report` |
+| Resolve Free 21.2.0.6 (macOS, App Store) | probe v1 run 2026-11-16 | Sandboxed; see below |
 
 ## Mac App Store build (found 2026-11-16)
 
@@ -24,6 +24,26 @@ The dev machine runs the **Mac App Store** build (`com.blackmagic-design.DaVinci
 
 ## Probe results
 
-_Add one section per Resolve version: date, product/version, Lua libraries available,
-whether `io` works, which color methods exist (`SetCDL`, `SetLUT`, `GetNodeGraph` ...),
-and the method-existence control result._
+### Free 21.2.0.6, macOS, Mac App Store build: probe v1, 2026-11-16
+
+Run by pasting into Workspace → Console (the Console has no language switch: Lua only).
+
+| Check | Result |
+|---|---|
+| Runtime | Lua 5.1 / LuaJIT 2.1 |
+| `io`, `require`, `debug`, `ffi` | **not available** |
+| `os` | available (`getenv`, `date`) |
+| `loadstring` | available (we never use it on external data) |
+| File helpers | `bmd.writestring`, `bmd.readstring`, `bmd.fileexists`, `bmd.direxists`, `bmd.copyfile` (no `bmd.writefile`/`createdir`) |
+| HOME | app container (`~/Library/Containers/com.blackmagic-design.DaVinciResolveLite/Data`) |
+| Fusion paths | Scripts/LUTs under `<container>/Library/Application Support/Fusion/` |
+| Method-existence control | reliable (unknown names return `nil`) |
+| Project | `ExportCurrentFrameAsStill`, `GetGallery`, `RefreshLUTList`, `Get/SetSetting`: present |
+| Timeline | `GrabStill`, `GrabAllStills`, `GetCurrentVideoItem`, `Export`, `Get/SetCurrentTimecode`: present |
+| Clip color methods (`SetCDL`, `SetLUT`, `GetNodeGraph`) | **not checked yet**: playhead was past the last clip |
+| Report file | not written (v1 only knew `io`/`bmd.writefile`) → probe v2 uses `bmd.writestring` |
+
+Implications for Phase 2:
+- Transport must use `bmd.writestring`/`readstring` (no `io`), polling a shared folder.
+- Which folder the sandbox shares with the outside world is tested by probe v2 (`write_tests`).
+- `ExportCurrentFrameAsStill` would let the AI grab frames itself (tested by probe v2).

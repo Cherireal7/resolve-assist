@@ -1,14 +1,16 @@
 --[[
-resolve-assist capability probe (READ-ONLY)
+resolve-assist capability probe (READ-ONLY for your project)
 
-Run inside DaVinci Resolve: Workspace -> Scripts -> resolve-assist Probe
-It never changes your project. It only asks Resolve what it supports and
-writes a JSON report to ~/.resolve-assist/probe-report.json.
+Run inside DaVinci Resolve: Workspace -> Scripts -> resolve-assist Probe,
+or paste into Workspace -> Console (Lua). Put the playhead over a clip first.
+It never changes your project. It asks Resolve what it supports, tests which
+folders it may write to, tries exporting the current frame as a PNG, and writes
+probe-report.json (~/.resolve-assist, ~/Movies/resolve-assist or ~/Pictures/resolve-assist).
 
-Fallback chain for the report: io library -> bmd.writefile -> console print.
+Fallback chain for the report: io library -> bmd.writestring -> console print.
 ]]
 
-local PROBE_VERSION = 1
+local PROBE_VERSION = 2
 local report = { schema = PROBE_VERSION, tool = "resolve-assist probe", checks = {}, methods = {}, errors = {} }
 
 local function safe(label, fn)
@@ -181,41 +183,68 @@ end
 
 local home = home_dir()
 local sep = package and package.config and package.config:sub(1, 1) or "/"
--- Candidate folders. The Mac App Store build is sandboxed: HOME is its container,
--- but Movies/Pictures inside the container may be links to the real user folders.
+report.checks.home = home or "unknown"
+local sandboxed = (home and home:find("/Library/Containers/", 1, true)) and true or false
+report.checks.sandboxed = sandboxed
+-- The Mac App Store build is sandboxed: HOME is its container. Try the real user
+-- folders first (allowed only if the sandbox grants them), then container links.
+local real_home = sandboxed and home:match("^(/Users/[^/]+)") or home
 local dirs = {}
-if home then
-  dirs[#dirs + 1] = home .. sep .. ".resolve-assist"
+if real_home then
+  dirs[#dirs + 1] = real_home .. sep .. ".resolve-assist"
+  dirs[#dirs + 1] = real_home .. sep .. "Movies" .. sep .. "resolve-assist"
+  dirs[#dirs + 1] = real_home .. sep .. "Pictures" .. sep .. "resolve-assist"
+end
+if sandboxed then
   dirs[#dirs + 1] = home .. sep .. "Movies" .. sep .. "resolve-assist"
   dirs[#dirs + 1] = home .. sep .. "Pictures" .. sep .. "resolve-assist"
 end
-report.checks.home = home or "unknown"
-report.checks.sandboxed = (home and home:find("/Library/Containers/", 1, true)) and true or false
-local written = {}
 
-local function try_io(dir)
-  if not (io and io.open) then return false end
-  local f = io.open(dir .. sep .. "probe-report.json", "w")
-  if not f then return false end
-  f:write(encode(report)); f:close()
-  return true
+-- Write text with whatever this build allows: io, else bmd.writestring. Verified by reading back.
+local function write_text(path, text)
+  if io and io.open then
+    local f = io.open(path, "w")
+    if f then f:write(text); f:close(); return "io" end
+  end
+  if type(bmd) == "table" and bmd.writestring then
+    local ok = pcall(bmd.writestring, path, text)
+    if ok and bmd.readstring then
+      local rok, back = pcall(bmd.readstring, path)
+      if rok and back == text then return "bmd.writestring" end
+    elseif ok and bmd.fileexists and bmd.fileexists(path) then
+      return "bmd.writestring"
+    end
+  end
+  return nil
 end
 
-local function try_bmd(dir)
-  if not (type(bmd) == "table" and bmd.writefile) then return false end
-  return pcall(function()
-    if bmd.createdir then bmd.createdir(dir) end
-    bmd.writefile(dir .. sep .. "probe-report.lua", { json = encode(report) })
+-- Which folders can this Resolve write to? (decides how the Phase 2 bridge talks)
+report.write_tests = {}
+local writable = nil
+for _, dir in ipairs(dirs) do
+  local method = write_text(dir .. sep .. "write-test.txt", "resolve-assist write test")
+  report.write_tests[dir] = method or "blocked"
+  if method and not writable then writable = dir end
+end
+
+-- Can a script export the current frame? (read-only for the project: it only writes a file)
+if writable and has_resolve then
+  report.checks.export_still = safe("ExportCurrentFrameAsStill", function()
+    local pm = r:GetProjectManager(); local project = pm:GetCurrentProject()
+    local path = writable .. sep .. "probe-frame.png"
+    local ok = project:ExportCurrentFrameAsStill(path)
+    local exists = bmd.fileexists and bmd.fileexists(path)
+    return tostring(ok) .. " (file " .. (exists and "created" or "missing") .. ")"
   end)
 end
 
-for _, dir in ipairs(dirs) do
-  if try_io(dir) then written[#written + 1] = dir .. " (io)"
-  elseif try_bmd(dir) then written[#written + 1] = dir .. " (bmd.writefile)" end
+local written = nil
+if writable then
+  report.checks.report_dir = writable
+  local method = write_text(writable .. sep .. "probe-report.json", encode(report))
+  if method then written = writable .. sep .. "probe-report.json (" .. method .. ")" end
 end
-report.checks.report_written_to = written
 local json_text = encode(report)
-written = (#written > 0) and table.concat(written, ", ") or nil
 
 print("")
 print("==== resolve-assist probe ====")

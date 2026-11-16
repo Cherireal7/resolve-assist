@@ -30,7 +30,8 @@ local item = obj{ GetName = function(self) return "clip1" end, GetNumNodes = fun
 local tl = obj{ GetName = function(self) return "Timeline 1" end, GetTrackCount = function(self) return 1 end,
                 GetItemListInTrack = function(self) return { item } end,
                 GetCurrentVideoItem = function(self) return item end }
-local project = obj{ GetTimelineCount = function(self) return 1 end, GetCurrentTimeline = function(self) return tl end }
+local project = obj{ GetTimelineCount = function(self) return 1 end, GetCurrentTimeline = function(self) return tl end,
+                     ExportCurrentFrameAsStill = function(self, path) bmd.writestring(path, "PNG"); return true end }
 local pm = obj{ GetCurrentProject = function(self) return project end }
 local fu = obj{ MapPath = function(self, p) return HOME_FOR_TEST .. "/Library/Application Support/X/" .. p end }
 resolve = obj{ GetProductName = function(self) return "DaVinci Resolve" end,
@@ -41,14 +42,32 @@ resolve = obj{ GetProductName = function(self) return "DaVinci Resolve" end,
 """
 
 
+BMD_FAKE = r"""
+local _io = io
+bmd = {
+  writestring = function(path, text)
+    local f = _io.open(path, "w"); if not f then error("blocked: " .. path) end
+    f:write(text); f:close()
+  end,
+  readstring = function(path)
+    local f = _io.open(path, "r"); if not f then return nil end
+    local t = f:read("*a"); f:close(); return t
+  end,
+  fileexists = function(path) local f = _io.open(path, "r"); if f then f:close(); return true end; return false end,
+}
+"""
+
+
 @unittest.skipIf(lupa is None, "pip install lupa to run the Lua probe test")
 class ProbeLuaTests(unittest.TestCase):
     def run_probe(self, home: Path, with_io: bool = True):
         lua = lupa.LuaRuntime(unpack_returned_tuples=True)
         lua.globals().HOME_FOR_TEST = str(home)
         lua.execute(f'os.getenv = function(k) if k == "HOME" then return "{home}" end end')
+        # Like Resolve Free 21.2 (App Store): no io/require; files only via bmd helpers.
+        lua.execute(BMD_FAKE)
         if not with_io:
-            lua.execute("io = nil")
+            lua.execute("io = nil; require = nil")
         lua.execute("print = function() end")
         lua.execute(FAKE_RESOLVE)
         lua.execute(PROBE)
@@ -69,9 +88,20 @@ class ProbeLuaTests(unittest.TestCase):
             # ffi exists only in LuaJIT; plain Lua test runtimes report it missing
             self.assertEqual([e for e in report["errors"] if not e.startswith("require ffi")], [])
 
-    def test_no_io_falls_back_to_console_without_crashing(self):
+    def test_resolve_free_21_2_without_io_uses_bmd_writestring(self):
         with tempfile.TemporaryDirectory() as tmp:
-            self.run_probe(Path(tmp), with_io=False)
+            home = Path(tmp) / "Library/Containers/com.blackmagic-design.DaVinciResolveLite/Data"
+            (home / "Pictures/resolve-assist").mkdir(parents=True)
+            self.run_probe(home, with_io=False)
+            report = json.loads((home / "Pictures/resolve-assist/probe-report.json").read_text())
+            self.assertEqual(report["schema"], 2)
+            self.assertEqual(report["write_tests"][str(home / "Pictures/resolve-assist")], "bmd.writestring")
+            self.assertEqual(report["write_tests"][str(home / "Movies/resolve-assist")], "blocked")
+            self.assertTrue(report["checks"]["export_still"].startswith("true (file created"))
+
+    def test_nothing_writable_falls_back_to_console(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.run_probe(Path(tmp) / "nope", with_io=False)
             self.assertEqual(list(Path(tmp).iterdir()), [])
 
 
