@@ -1,5 +1,5 @@
 --[[
-resolve-assist bridge (Phase 2), protocol 1
+resolve-assist bridge (Phase 2), protocol 2
 
 Runs inside DaVinci Resolve (Free or Studio). Started by the loader that
 `resolve-assist bridge-install` puts on your clipboard, or from the Scripts menu
@@ -17,7 +17,7 @@ Security:
 
 local BRIDGE_DIR = BRIDGE_DIR_OVERRIDE or {{BRIDGE_DIR}}
 local LUT_DIR = LUT_DIR_OVERRIDE or {{LUT_DIR}}
-local PROTOCOL = 1
+local PROTOCOL = 2
 local POLL_SECONDS = BRIDGE_POLL_SECONDS or 0.1
 local MAX_LOOPS = BRIDGE_MAX_LOOPS          -- tests only; nil = run until stopped
 local MAX_AGE = 60                          -- seconds a request stays valid
@@ -223,6 +223,36 @@ function OPS.apply_cdl(req)
   return { ok = ok and true or false, previous_version = prev, clip = info(it, req.target) }
 end
 
+-- Resolve may only load LUTs from its own LUT folders (inside the sandbox on the App Store build).
+-- Try the file where it is; then copy it into each candidate LUT folder and try again.
+local function copy_file(src, dst)
+  if bmd.copyfile then
+    local ok = pcall(bmd.copyfile, src, dst)
+    if ok and (not bmd.fileexists or bmd.fileexists(dst)) then return true end
+  end
+  local fin = app:OpenFile(src, 1)
+  if not fin then return false end
+  local fout = app:OpenFile(dst, 2)
+  if not fout then fin:Close(); return false end
+  for _ = 1, 300000 do
+    local line = fin:ReadLine()
+    if line == nil then break end
+    fout:WriteLine((line:gsub("[\r\n]+$", "")))
+  end
+  fout:Flush(); fout:Close(); fin:Close()
+  return true
+end
+
+local function lut_roots()
+  local roots = {}
+  local ok, fusion_luts = pcall(function() return app:MapPath("LUTs:") end)
+  local home = os.getenv("HOME") or ""
+  roots[#roots + 1] = home .. "/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/"
+  roots[#roots + 1] = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/"
+  if ok and type(fusion_luts) == "string" then roots[#roots + 1] = fusion_luts end
+  return roots
+end
+
 function OPS.apply_lut(req)
   local it = item_for(req.target)
   local name = req.lut or ""
@@ -232,10 +262,37 @@ function OPS.apply_lut(req)
   local node = node_of(req)
   local prev = ensure_ai_version(it)
   local graph = it:GetNodeGraph()
-  local ok = graph and graph:SetLUT(node, path)
-  if not ok then ok = it:SetLUT(node, path) end
+  local attempts = {}
+  local function try(p, label)
+    local ok = graph and graph:SetLUT(node, p)
+    if not ok then ok = it:SetLUT(node, p) end
+    attempts[#attempts + 1] = label .. ": " .. tostring(ok and true or false)
+    return ok
+  end
+  local ok = try(path, "documents")
+  if not ok then
+    for _, root in ipairs(lut_roots()) do
+      local dst = root .. name
+      if copy_file(path, dst) then
+        pcall(function() project():RefreshLUTList() end)
+        ok = try(dst, root) or try(name, root .. " (relative)")
+        if ok then break end
+      else
+        attempts[#attempts + 1] = root .. ": copy failed"
+      end
+    end
+  end
   local now = graph and graph:GetLUT(node) or it:GetLUT(node)
-  return { ok = ok and true or false, lut_now = now, previous_version = prev, clip = info(it, req.target) }
+  return { ok = ok and true or false, lut_now = now, previous_version = prev, attempts = attempts,
+           clip = info(it, req.target) }
+end
+
+function OPS.stabilize(req)
+  local it = item_for(req.target)
+  assert(it.Stabilize, "this Resolve build has no Stabilize()")
+  local prev = ensure_ai_version(it)
+  local ok = it:Stabilize()
+  return { ok = ok and true or false, previous_version = prev, clip = info(it, req.target) }
 end
 
 function OPS.undo(req)

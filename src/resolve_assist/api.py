@@ -15,7 +15,7 @@ from . import __version__
 from .analyze import Stats, analyze_image, crop_borders
 from .color.cdl import CDL
 from .color.correct import auto_balance, match_shot, verify
-from .color.looks import LOOKS, list_looks, look_transform
+from .color.looks import LOOKS, compose, list_looks, look_as_cdl, look_transform
 from .color.lut import ALLOWED_SIZES, LUT3D
 from .imaging.decode import decode
 from .imaging.png import Image, encode_png
@@ -341,10 +341,30 @@ def apply_grade(
         res = b.call("apply_cdl", target=target, node=int(node), slope=s["Slope"], offset=s["Offset"],
                      power=s["Power"], saturation=s["Saturation"])
     else:
-        lut = make_lut(f"ra-{look}-{int(time.time())}", look=look, strength=strength, slope=cdl.slope,
-                       offset=cdl.offset, power=cdl.power, saturation=cdl.saturation, size=33)
-        res = b.call("apply_lut", target=target, node=int(node), lut=Path(lut["lut_path"]).name)
+        # Correction as exact CDL, look as a LUT on the same node.
+        s = cdl.resolve_strings()
+        res = b.call("apply_cdl", target=target, node=int(node), slope=s["Slope"], offset=s["Offset"],
+                     power=s["Power"], saturation=s["Saturation"])
+        if not res.get("ok"):
+            raise RuntimeError(f"Resolve did not accept the correction: {res}")
+        lut = make_lut(f"ra-{look}-{int(time.time())}", look=look, strength=strength, size=33)
         plan["lut_path"] = lut["lut_path"]
+        lut_res = b.call("apply_lut", target=target, node=int(node), lut=Path(lut["lut_path"]).name)
+        plan["lut_attempts"] = lut_res.get("attempts")
+        if lut_res.get("ok"):
+            plan["method"] = "cdl+lut"
+            res = lut_res
+        else:
+            # Fallback: Resolve refused the LUT. Fold an approximation of the look into the CDL.
+            approx = compose(cdl, look_as_cdl(LOOKS[look], strength)) if cdl.power == (1.0, 1.0, 1.0) \
+                else look_as_cdl(LOOKS[look], strength)
+            a = approx.resolve_strings()
+            res = b.call("apply_cdl", target=target, node=int(node), slope=a["Slope"], offset=a["Offset"],
+                         power=a["Power"], saturation=a["Saturation"])
+            res.setdefault("previous_version", lut_res.get("previous_version"))
+            plan["method"] = "cdl-approximation"
+            plan["cdl"] = a
+            plan["note"] = "Resolve refused the LUT; the look was approximated with CDL values (no S-curve)."
     if not res.get("ok"):
         raise RuntimeError(f"Resolve did not accept the change: {res}")
     b.remember_previous(res.get("clip") or {}, res.get("previous_version"))
@@ -367,3 +387,11 @@ def undo_grade(target: str = "current") -> dict:
     previous = b.previous_version(clip) or "Version 1"
     res = b.call("undo", target=target, version=previous)
     return {"restored_version": previous, "resolve": res}
+
+
+def stabilize(target: str = "current") -> dict:
+    """Run Resolve's stabilizer on a clip (inside the resolve-assist grade version)."""
+    b = _bridge()
+    res = b.call("stabilize", timeout=600, target=target)
+    b.remember_previous(res.get("clip") or {}, res.get("previous_version"))
+    return res

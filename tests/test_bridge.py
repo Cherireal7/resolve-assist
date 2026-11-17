@@ -41,7 +41,7 @@ fu = {
     if not fh then return nil end
     return file_obj(fh)
   end,
-  MapPath = function(self, p) return SCRIPTS_DIR .. "/" end,
+  MapPath = function(self, p) if p == "LUTs:" then return FUSION_LUTS .. "/" end; return SCRIPTS_DIR .. "/" end,
 }
 bmd = {
   wait = function(s) PY_SLEEP(0.01) end,
@@ -60,11 +60,16 @@ local function clip(name, s, e)
   c.LoadVersionByName = function(self, n) if self.versions[n] then self.version = n; return true end; return false end
   c.SetCDL = function(self, t) RECORD("SetCDL", self.name, self.version, t.Slope, t.NodeIndex); return true end
   local graph = {}
-  graph.SetLUT = function(g, node, path) RECORD("SetLUT", c.name, c.version, path, node); c.lut = path; return true end
+  graph.SetLUT = function(g, node, path)
+    RECORD("SetLUT", c.name, c.version, path, node)
+    if ALLOW_LUT(path) then c.lut = path; return true end
+    return false
+  end
   graph.GetLUT = function(g, node) return c.lut end
   c.GetNodeGraph = function(self) return graph end
   c.SetLUT = graph.SetLUT
   c.GetLUT = graph.GetLUT
+  c.Stabilize = function(self) RECORD("Stabilize", self.name, self.version, "", 0); return true end
   return c
 end
 local clips = { clip("A.mp4", 86400, 86500), clip("B.mp4", 86500, 86700) }
@@ -115,6 +120,12 @@ class BridgeEndToEnd(unittest.TestCase):
         g.RECORD = lambda op, clip, version, value, node: self.recorded.append(
             {"op": op, "clip": clip, "version": version, "value": value, "node": node})
         g.SCRIPTS_DIR = str(self.scripts)
+        self.fusion_luts = self.env.root / "FusionLUTs"
+        self.fusion_luts.mkdir()
+        g.FUSION_LUTS = str(self.fusion_luts)
+        # Like real Resolve: LUTs load only from its own LUT folder (decided in Python: no Lua lock).
+        self.lut_allowed_prefix = str(self.fusion_luts)
+        g.ALLOW_LUT = lambda path: str(path).startswith(self.lut_allowed_prefix)
         g.FAKE_PNG = encode_png(w, h, px)
         self.lua.execute(FAKE)
         self.errors = []
@@ -173,13 +184,31 @@ class BridgeEndToEnd(unittest.TestCase):
         self.assertEqual(undo["restored_version"], "Version 1")
         self.assertEqual(undo["resolve"]["clip"]["version"], "Version 1")
 
-    def test_look_goes_through_a_lut_in_the_allowlisted_folder(self):
-        done = api.apply_grade("1:2", look="warm-film", strength=0.5, confirm=True, verify=False)
-        call = self.calls()[0]
-        self.assertEqual(call["op"], "SetLUT")
-        self.assertTrue(Path(call["value"]).is_file())
-        self.assertEqual(Path(call["value"]).parent, (self.env.root / "out" / "LUTs"))
-        self.assertTrue(done["applied"])
+    def test_look_lut_is_copied_into_resolves_lut_folder(self):
+        done = api.apply_grade("1:2", slope="0.95 1 1.05", look="warm-film", strength=0.5, confirm=True, verify=False)
+        self.assertEqual(done["plan"]["method"], "cdl+lut")
+        ops = [c["op"] for c in self.calls()]
+        self.assertEqual(ops[0], "SetCDL")                       # correction first
+        self.assertIn("SetLUT", ops)
+        final = [c for c in self.calls() if c["op"] == "SetLUT"][-1]["value"]
+        self.assertTrue(final.startswith(str(self.fusion_luts)))  # copied by Lua into Resolve's folder
+        self.assertTrue(Path(final).is_file())
+        self.assertEqual(Path(final).read_text().splitlines()[2], "LUT_3D_SIZE 33")
+
+    def test_look_falls_back_to_cdl_when_resolve_refuses_luts(self):
+        self.lut_allowed_prefix = "/nowhere"
+        done = api.apply_grade("current", slope="0.95 1 1.05", look="clean-commercial", strength=0.6,
+                               confirm=True, verify=False)
+        self.assertEqual(done["plan"]["method"], "cdl-approximation")
+        last = self.calls()[-1]
+        self.assertEqual(last["op"], "SetCDL")
+        self.assertNotEqual(last["value"], "0.9500 1.0000 1.0500")  # look folded into the correction
+
+    def test_stabilize(self):
+        res = api.stabilize("current")
+        self.assertTrue(res["ok"])
+        self.assertEqual(self.calls()[-1]["op"], "Stabilize")
+        self.assertEqual(self.calls()[-1]["version"], "resolve-assist")
 
     def test_security_rejections(self):
         b = Bridge()

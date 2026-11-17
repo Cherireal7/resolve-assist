@@ -166,3 +166,26 @@ class BorderTests(unittest.TestCase):
         img, info = crop_borders(Image(50, 50, dark, 50, 50))
         self.assertIsNone(info)
         self.assertEqual(img.width, 50)
+
+
+class LookCDLTests(unittest.TestCase):
+    def test_look_as_cdl_tracks_the_look(self):
+        from resolve_assist.color.looks import look_as_cdl
+        look = LOOKS["warm-film"]
+        cdl = look_as_cdl(look, 1.0)
+        fn = look_transform(look, 1.0)
+        for v in (0.25, 0.5, 0.75):
+            for a, b in zip(cdl.apply((v, v, v)), fn((v, v, v))):
+                self.assertAlmostEqual(a, b, delta=0.05)
+        self.assertGreater(cdl.slope[0], cdl.slope[2])  # warm: more red than blue
+
+    def test_compose_is_sequential_application(self):
+        from resolve_assist.color.looks import compose
+        a = CDL.make(slope=(1.1, 1.0, 0.9), offset=0.02)
+        b = CDL.make(slope=1.05, offset=-0.01, saturation=1.2)
+        c = compose(a, b)
+        x = (0.3, 0.5, 0.6)
+        for u, v in zip(c.apply(x), b.apply(a.apply(x))):
+            self.assertAlmostEqual(u, v, places=6)
+        with self.assertRaises(ValueError):
+            compose(CDL.make(power=1.2), b)

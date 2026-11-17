@@ -90,3 +90,36 @@ def cdl_transform(cdl: CDL) -> Transform:
 
 def list_looks() -> list[dict]:
     return [{"name": k, "description": v.description} for k, v in LOOKS.items()]
+
+
+def look_as_cdl(look: Look, strength: float = 1.0) -> CDL:
+    """Best CDL approximation of a look (per-channel linear fit over a gray ramp).
+
+    Used when a LUT can't be loaded: a CDL can't hold an S-curve or split toning
+    exactly, but the fit keeps overall color balance, contrast and saturation.
+    """
+    fn = look_transform(look, strength)
+    xs = [0.05 + 0.9 * i / 40 for i in range(41)]
+    outs = [fn((x, x, x)) for x in xs]
+    slope, offset = [], []
+    n = len(xs)
+    mx = sum(xs) / n
+    for c in range(3):
+        ys = [o[c] for o in outs]
+        my = sum(ys) / n
+        k = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+        slope.append(k)
+        offset.append(my - k * mx)
+    sat = look.cdl.blend(max(0.0, min(2.0, strength))).saturation
+    return CDL.make(slope=slope, offset=offset, power=1.0, saturation=sat,
+                    notes=[f"approximation of look '{look.name}' at {strength:.2f}"])
+
+
+def compose(first: CDL, then: CDL) -> CDL:
+    """first followed by then, exact when both have power 1 (ignores intermediate clamping)."""
+    if first.power != (1.0, 1.0, 1.0) or then.power != (1.0, 1.0, 1.0):
+        raise ValueError("compose needs power 1 on both CDLs")
+    slope = [a * b for a, b in zip(first.slope, then.slope)]
+    offset = [o1 * s2 + o2 for o1, s2, o2 in zip(first.offset, then.slope, then.offset)]
+    return CDL.make(slope=slope, offset=offset, power=1.0, saturation=first.saturation * then.saturation,
+                    notes=list(first.notes) + list(then.notes))

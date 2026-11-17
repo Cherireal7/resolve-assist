@@ -71,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     grade_args(ap)
     ap.add_argument("--node", type=int, default=1)
     ap.add_argument("--yes", action="store_true", help="really apply (otherwise only show the plan)")
+    st = sub.add_parser("stabilize", help="run Resolve's stabilizer on a clip")
+    st.add_argument("target", nargs="?", default="current")
     un = sub.add_parser("undo", help="restore the clip's previous grade version")
     un.add_argument("target", nargs="?", default="current")
     sub.add_parser("serve", help="run the MCP server (stdio)")
@@ -113,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "apply":
             _print(api.apply_grade(args.target, args.slope, args.offset, args.power, args.saturation,
                                    args.look, args.strength, args.node, confirm=args.yes))
+        elif args.cmd == "stabilize":
+            _print(api.stabilize(args.target))
         elif args.cmd == "undo":
             _print(api.undo_grade(args.target))
         elif args.cmd == "serve":

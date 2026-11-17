@@ -124,6 +124,12 @@ def apply_grade(target: str = "current", slope: str = "1 1 1", offset: str = "0 
 
 
 @mcp.tool()
+def stabilize_clip(target: str = "current") -> str:
+    """Run Resolve's stabilizer on a clip (goes into the resolve-assist grade version; undo restores)."""
+    return _run(api.stabilize, target=target)
+
+
+@mcp.tool()
 def undo_grade(target: str = "current") -> str:
     """Restore the clip's grade version from before resolve-assist changed it."""
     return _run(api.undo_grade, target=target)

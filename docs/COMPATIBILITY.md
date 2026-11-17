@@ -55,3 +55,13 @@ Implications for Phase 2:
 - **Transport decided:** shared folder `~/Documents/resolve-assist/bridge` + `fu:OpenFile`. No blocker left for Phase 2.
 - Earlier blocker note (kept for history): a folder both Resolve (sandboxed) and our server can use. Next test: `~/Documents/resolve-assist/bridge` and the container `tmp/`;
   if blocked, grant access by adding the folder in Resolve (Preferences → Media Storage) so the sandbox gets a user-approved bookmark.
+
+### Live bridge test, Free 21.2.0.6 App Store, 2026-11-17
+
+| Step | Result |
+|---|---|
+| Start bridge by pasting the loader into the Console | ✅ running; menu entry written to Scripts/Utility, Color, Edit |
+| status / list_clips | ✅ project, timeline (60 fps), clip under playhead |
+| grab_frame (ExportCurrentFrameAsStill) | ✅ and the exported frame **includes the grade** (re-measured cast 3.4% → 1.9% after CDL) |
+| apply_cdl (SetCDL) in new version `resolve-assist` | ✅ AddVersion + LoadVersionByName work |
+| apply_lut with a LUT in ~/Documents | ❌ SetLUT returned false (Resolve loads LUTs only from its LUT folders) → protocol 2 copies into LUT folders |

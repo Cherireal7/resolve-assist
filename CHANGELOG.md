@@ -12,6 +12,10 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 - Session ids, request expiry, heartbeat, audit journal, Scripts-menu entry on first run.
 - End-to-end tests running the real bridge in a Lua runtime against a fake Resolve.
 
+- Bridge protocol 2: `stabilize` op; LUTs are copied by Lua into Resolve's own LUT folders when
+  Resolve refuses to load them from Documents (live finding on Free 21.2 App Store).
+- Fallback: if no LUT folder works, the look is approximated as CDL and folded into the correction.
+
 ### Fixed
 - Client retries reading the heartbeat file while Lua is rewriting it (found by the end-to-end test).
 

@@ -24,10 +24,10 @@ from typing import Any
 
 from .paths import output_dir
 
-PROTOCOL = 1
+PROTOCOL = 2
 HEARTBEAT_STALE_S = 10.0
 ALLOWED_OPS = {"status", "list_clips", "clip_info", "goto_clip", "grab_frame",
-               "apply_cdl", "apply_lut", "undo", "stop"}
+               "apply_cdl", "apply_lut", "stabilize", "undo", "stop"}
 ALLOWED_PARAMS = {"target", "node", "slope", "offset", "power", "saturation", "lut", "version"}
 _VALUE_RE = re.compile(r"^[^\t\r\n\x00]{0,512}$")
 _TARGET_RE = re.compile(r"^(current|\d{1,3}:\d{1,4})$")
