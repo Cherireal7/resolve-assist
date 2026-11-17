@@ -10,7 +10,7 @@ It works with Claude (or any MCP client) or from the command line.
 - 🧯 **Fallbacks everywhere.** ffmpeg → macOS `sips` → built-in PNG decoder.
 
 > Status: v0.2 (Phase 2): the AI can grab frames from Resolve and apply grades to clips
-> (dry run first, separate grade version, one-step undo). Tested on Resolve Free 21.2 (App Store build).
+> (dry run first, separate grade version, one-step undo). Built for Resolve Free 21.2 (App Store build); live test in progress.
 > See [PROJECT.md](PROJECT.md) for goals, architecture, security and roadmap.
 
 ## Install
