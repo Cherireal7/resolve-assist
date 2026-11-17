@@ -49,6 +49,9 @@ Implications for Phase 2:
 - The color API needed for Phase 2 exists: apply LUT (`SetLUT`), CDL (`SetCDL`), PowerGrades (`graph:ApplyGradeFromDRX`), versions for undo (`AddVersion`/`LoadVersionByName`).
 - `bmd.writestring`/`readstring` are **serializers, not file I/O** (writestring returns the quoted string); probe v2 write tests were therefore invalid.
 - `project:ExportCurrentFrameAsStill("~/Documents/resolve-assist/bridge/frame.png")` **works** in the sandbox (1920×1080 PNG written).
-- File I/O without `io`: Fusion's `fu:OpenFile(path, 1=read|2=write)` with `ReadLine`/`WriteLine`/`Flush`/`Close`; test pending.
-- Blocker: a folder both Resolve (sandboxed) and our server can use. Next test: `~/Documents/resolve-assist/bridge` and the container `tmp/`;
+- File I/O without `io`: Fusion's `fu:OpenFile(path, 1=read|2=write)` with `ReadLine`/`WriteLine`/`Flush`/`Close`
+  **works in the sandbox** for `~/Documents/resolve-assist/bridge` (2026-11-17): read a file written by Python,
+  wrote a new file Python could read. `WriteLine` returns bytes written, `Flush` returns true.
+- **Transport decided:** shared folder `~/Documents/resolve-assist/bridge` + `fu:OpenFile`. No blocker left for Phase 2.
+- Earlier blocker note (kept for history): a folder both Resolve (sandboxed) and our server can use. Next test: `~/Documents/resolve-assist/bridge` and the container `tmp/`;
   if blocked, grant access by adding the folder in Resolve (Preferences → Media Storage) so the sandbox gets a user-approved bookmark.
