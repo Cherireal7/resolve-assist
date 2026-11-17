@@ -1,5 +1,5 @@
 --[[
-resolve-assist bridge (Phase 2), protocol 3
+resolve-assist bridge (Phase 2), protocol 4
 
 Runs inside DaVinci Resolve (Free or Studio). Started by the loader that
 `resolve-assist bridge-install` puts on your clipboard, or from the Scripts menu
@@ -19,7 +19,7 @@ Security:
 local BRIDGE_DIR = BRIDGE_DIR_OVERRIDE or {{BRIDGE_DIR}}
 local LUT_DIR = LUT_DIR_OVERRIDE or {{LUT_DIR}}
 local MEDIA_DIR = MEDIA_DIR_OVERRIDE or {{MEDIA_DIR}}
-local PROTOCOL = 3
+local PROTOCOL = 4
 local POLL_SECONDS = BRIDGE_POLL_SECONDS or 0.1
 local MAX_LOOPS = BRIDGE_MAX_LOOPS          -- tests only; nil = run until stopped
 local MAX_AGE = 60                          -- seconds a request stays valid
@@ -357,19 +357,45 @@ function OPS.add_title(req)
   local fps = fps_of(tl)
   local frame = tl:GetStartFrame() + math.floor(at * math.floor(fps + 0.5))
   tl:SetCurrentTimecode(frames_to_tc(frame, fps))
-  -- Make sure the title lands on its own track: add one and lock the existing video tracks.
-  local before = tl:GetTrackCount("video")
-  tl:AddTrack("video")
-  for t = 1, before do tl:SetTrackLock("video", t, true) end
-  local ok, item = pcall(function() return tl:InsertFusionTitleIntoTimeline("Text+") end)
-  for t = 1, before do tl:SetTrackLock("video", t, false) end
-  assert(ok and item, "Resolve could not insert a Text+ title")
-  local comp = item:GetFusionCompByIndex(1)
-  local tool = comp and (comp:FindToolByID("TextPlus") or comp:FindTool("Template"))
-  assert(tool, "title inserted but its text tool was not found")
-  tool:SetInput("StyledText", (text:gsub("|", "\n")))
-  return { ok = true, text = text, at = at, start = item:GetStart(), ["end"] = item:GetEnd(),
-           track = tl:GetTrackCount("video"), timeline = tl:GetName() }
+  -- Try the safest ways first and report every attempt (Resolve's title API differs per build).
+  local attempts = {}
+  local function count_v1()
+    local n = 0
+    for _ in pairs(tl:GetItemListInTrack("video", 1) or {}) do n = n + 1 end
+    return n
+  end
+  local function try(label, fn)
+    local ok, res = pcall(fn)
+    attempts[#attempts + 1] = label .. ": " .. (ok and (res and "ok" or "no item") or ("error " .. tostring(res)))
+    if ok and res then return res end
+  end
+  local v1_before = count_v1()
+  pcall(function() r:OpenPage("edit") end)
+  tl:SetCurrentTimecode(frames_to_tc(frame, fps))
+  if tl:GetTrackCount("video") < 2 then tl:AddTrack("video") end
+  local item = try("fusion Text+ (track 1 locked)", function()
+      tl:SetTrackLock("video", 1, true)
+      local ok, res = pcall(function() return tl:InsertFusionTitleIntoTimeline("Text+") end)
+      tl:SetTrackLock("video", 1, false)
+      if ok then return res end
+      error(res, 0)
+    end)
+    or try("fusion Text+", function() return tl:InsertFusionTitleIntoTimeline("Text+") end)
+    or try("title Text+", function() return tl:InsertTitleIntoTimeline("Text+") end)
+    or try("title Text", function() return tl:InsertTitleIntoTimeline("Text") end)
+  assert(item, "Resolve could not insert a title. Attempts: " .. table.concat(attempts, "; "))
+  local warning = nil
+  if count_v1() ~= v1_before then
+    warning = "the title landed on video track 1 (only in the timeline copy); move it up in the Edit page"
+  end
+  local text_set = false
+  pcall(function()
+    local comp = item:GetFusionCompByIndex(1)
+    local tool = comp and (comp:FindToolByID("TextPlus") or comp:FindTool("Template"))
+    if tool then tool:SetInput("StyledText", (text:gsub("|", "\n"))); text_set = true end
+  end)
+  return { ok = true, text = text, text_set = text_set, at = at, start = item:GetStart(), ["end"] = item:GetEnd(),
+           attempts = attempts, warning = warning, timeline = tl:GetName() }
 end
 
 function OPS.undo(req)

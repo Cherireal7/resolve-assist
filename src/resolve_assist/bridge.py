@@ -24,7 +24,7 @@ from typing import Any
 
 from .paths import output_dir
 
-PROTOCOL = 3
+PROTOCOL = 4
 HEARTBEAT_STALE_S = 10.0
 ALLOWED_OPS = {"status", "list_clips", "clip_info", "goto_clip", "grab_frame",
                "apply_cdl", "apply_lut", "stabilize", "undo", "stop",
