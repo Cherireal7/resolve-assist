@@ -4,6 +4,12 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (social formats & captions)
+- `make_format`: copy the timeline into 9x16 / 4x5 / 1x1 / 16x9 with clips scaled to fit (bridge protocol 8).
+- `auto_captions`: local whisper.cpp transcription → short social-style SRT; for a file or the whole
+  timeline (each clip's used source range, shifted to timeline time) and import onto a timeline copy.
+- Clip info now includes the source file path and source offset.
+
 ### Added (asset library)
 - `library_build`: royalty-free assets generated locally into ~/Documents/resolve-assist/library:
   16 SFX (whooshes, risers, impacts, hits, pops, glitch, shutter, ding, typing), 5 music beds

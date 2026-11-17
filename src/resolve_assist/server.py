@@ -212,6 +212,25 @@ def apply_powergrade(file: str, target: str = "current", mode: int = 0) -> str:
     return _run(api.apply_powergrade, file=file, target=target, mode=mode)
 
 
+@mcp.tool()
+def make_format(format: str = "9x16") -> str:
+    """Copy the current timeline into a social format: 9x16 (Reels/TikTok/Shorts), 4x5 (feed),
+    1x1, or 16x9. Clips are scaled to fit; the original timeline is untouched."""
+    return _run(api.make_format, format=format)
+
+
+@mcp.tool()
+def auto_captions(path: Optional[str] = None, model: str = "base", language: str = "auto",
+                  max_chars: int = 32, add_to_resolve: bool = True) -> str:
+    """Local speech-to-text captions (whisper.cpp, nothing uploaded). With path: caption that file.
+    Without: caption the current Resolve timeline and add the subtitles to a timeline copy.
+    model: tiny/base/small/medium (bigger = more accurate, slower). language: auto or 'en','am',..."""
+    if path:
+        return _run(api.captions_for_file, path=path, model=model, language=language, max_chars=max_chars)
+    return _run(api.captions_for_timeline, model=model, language=language, max_chars=max_chars,
+                add_to_resolve=add_to_resolve)
+
+
 def main() -> None:
     mcp.run()
 

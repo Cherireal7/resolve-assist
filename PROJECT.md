@@ -184,7 +184,8 @@ Prerequisite for titles and most effects: fix the open Fusion bug above.
 | **Match cuts / jump cuts** placed from the finder; J/L-cut audio offsets | append ranges per track | 🔶 |
 | Markers for beats, best moments, problems | `Timeline:AddMarker` | 🔶 |
 | Transitions (cross-dissolve, dip, zoom/whip) | Fusion transition comps or overlap + Merge blend | 🔶 |
-| Vertical (9:16) timeline for phone footage, safe areas | `Timeline:SetSetting` resolution (Smart Reframe is ⛔) | 🔶 |
+| Vertical (9:16) / 4:5 / 1:1 timeline copies, clips scaled to fit | `Timeline:SetSetting` (Smart Reframe is ⛔) | 🔶 built, live test pending |
+| Auto captions (local whisper.cpp → SRT → subtitle track) | CapCut-style; Resolve's AI subtitles are ⛔ Studio | 🔶 built, live test pending |
 | Edit plan preview without Resolve: storyboard PNG + timing sheet | ours | 🧪 |
 
 ### Phase 6: Delivery (v0.6)

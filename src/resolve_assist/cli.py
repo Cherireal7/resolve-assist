@@ -107,6 +107,14 @@ def main(argv: list[str] | None = None) -> int:
     pg = sub.add_parser("powergrade", help="apply a .drx from library/powergrades to a clip")
     pg.add_argument("file")
     pg.add_argument("target", nargs="?", default="current")
+    fm = sub.add_parser("format", help="copy the timeline into 9x16 / 4x5 / 1x1 / 16x9")
+    fm.add_argument("format", nargs="?", default="9x16", choices=("9x16", "4x5", "1x1", "16x9"))
+    cp = sub.add_parser("captions", help="local auto captions (file, or the current timeline)")
+    cp.add_argument("path", nargs="?")
+    cp.add_argument("--model", default="base", choices=("tiny", "base", "small", "medium"))
+    cp.add_argument("--language", default="auto")
+    cp.add_argument("--max-chars", type=int, default=32)
+    cp.add_argument("--no-resolve", action="store_true")
     sub.add_parser("serve", help="run the MCP server (stdio)")
 
     args = p.parse_args(argv)
@@ -177,6 +185,13 @@ def main(argv: list[str] | None = None) -> int:
             _print(api.import_assets(args.names))
         elif args.cmd == "powergrade":
             _print(api.apply_powergrade(args.file, args.target))
+        elif args.cmd == "format":
+            _print(api.make_format(args.format))
+        elif args.cmd == "captions":
+            if args.path:
+                _print(api.captions_for_file(args.path, args.model, args.language, args.max_chars))
+            else:
+                _print(api.captions_for_timeline(args.model, args.language, args.max_chars, not args.no_resolve))
         elif args.cmd == "serve":
             try:
                 from .server import main as serve

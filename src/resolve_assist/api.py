@@ -574,3 +574,57 @@ def apply_powergrade(file: str, target: str = "current", mode: int = 0) -> dict:
     res = b.call("apply_drx", target=target, file=rel, mode=int(mode))
     b.remember_previous(res.get("clip") or {}, res.get("previous_version"))
     return res
+
+
+# --------------------------------------------------------------------------- formats & captions
+
+def make_format(format: str = "9x16") -> dict:
+    """Make a copy of the current timeline in a social format (9x16, 4x5, 1x1, 16x9), clips scaled to fit."""
+    if format not in ("9x16", "4x5", "1x1", "16x9"):
+        raise ValueError("format must be 9x16, 4x5, 1x1 or 16x9")
+    return _bridge().call("make_format", timeout=60, format=format)
+
+
+def captions_for_file(path: str, model: str = "base", language: str = "auto", max_chars: int = 32) -> dict:
+    """Transcribe a video/audio file locally and write an SRT next to the other outputs."""
+    from .captions import captions_dir, to_srt, transcribe
+    from .paths import check_input_audio
+    p = check_input_audio(path)
+    cues = transcribe(p, model, language, max_chars)
+    out = output_path(p.stem, ".srt", subdir="captions", overwrite=True)
+    out.write_text(to_srt(cues), encoding="utf-8")
+    return {"srt": str(out), "cues": len(cues), "preview": [c.text for c in cues[:8]], "folder": str(captions_dir())}
+
+
+def captions_for_timeline(model: str = "base", language: str = "auto", max_chars: int = 32,
+                          add_to_resolve: bool = True) -> dict:
+    """Caption the current timeline: transcribe each clip's used part of its source file, shift it to
+    timeline time, write one SRT, and (optionally) add it to a resolve-assist timeline copy."""
+    from .captions import shift, to_srt, transcribe
+    b = _bridge()
+    info = b.call("list_clips")
+    fps = float(info["fps"])
+    t0 = info.get("start_frame") or min(c["start"] for c in info["clips"])
+    cues, skipped = [], []
+    for c in info["clips"]:
+        f = c.get("file")
+        if not f or not Path(f).is_file():
+            skipped.append(f"{c['name']}: source file not found")
+            continue
+        src_in = (c.get("source_offset") or 0) / fps
+        dur = (c["end"] - c["start"]) / fps
+        try:
+            part = transcribe(Path(f), model, language, max_chars, start=src_in, duration=dur)
+        except Exception as exc:
+            skipped.append(f"{c['name']}: {exc}")
+            continue
+        cues += shift(part, (c["start"] - t0) / fps, 0.0, dur)
+    cues.sort(key=lambda q: q.start)
+    name = safe_name(info["timeline"]) + "-captions"
+    out = output_path(name, ".srt", subdir="captions", overwrite=True)
+    out.write_text(to_srt(cues), encoding="utf-8")
+    result = {"srt": str(out), "cues": len(cues), "preview": [q.text for q in cues[:8]], "skipped": skipped}
+    if add_to_resolve and cues:
+        result["copy"] = b.call("duplicate_timeline")
+        result["resolve"] = b.call("import_subtitles", timeout=60, file=out.name)
+    return result

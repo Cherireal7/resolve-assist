@@ -172,3 +172,58 @@ class LibraryTests(unittest.TestCase):
         data = encode_png(2, 1, [(1.0, 0.0, 0.0, 0.5), (0.0, 1.0, 0.0, 1.0)])
         img = decode_png(data)
         self.assertAlmostEqual(img.pixels[0][0], 1.0)
+
+
+class CaptionTests(unittest.TestCase):
+    SRT = """1
+00:00:00,500 --> 00:00:01,800
+Welcome to the
+
+2
+00:00:01,800 --> 00:00:03,100
+nail art session
+
+3
+00:00:03,100 --> 00:00:04,000
+[MUSIC]
+"""
+
+    def test_parse_drop_tags_and_roundtrip(self):
+        from resolve_assist.captions import parse_srt, to_srt
+        cues = parse_srt(self.SRT)
+        self.assertEqual([c.text for c in cues], ["Welcome to the", "nail art session"])
+        self.assertAlmostEqual(cues[1].start, 1.8)
+        again = parse_srt(to_srt(cues))
+        self.assertEqual([(c.start, c.end, c.text) for c in again], [(c.start, c.end, c.text) for c in cues])
+
+    def test_shift_and_trim_to_clip(self):
+        from resolve_assist.captions import parse_srt, shift
+        cues = parse_srt(self.SRT)
+        moved = shift(cues, offset=10.0, clip_from=0.0, clip_to=2.5)
+        self.assertEqual([(round(c.start, 2), round(c.end, 2)) for c in moved], [(10.5, 11.8), (11.8, 12.5)])
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")
+    def test_pipeline_with_fake_whisper(self):
+        import os, stat
+        from resolve_assist import captions
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            fake = d / "whisper-cli"
+            fake.write_text("#!/bin/sh\nwhile [ $# -gt 0 ]; do if [ \"$1\" = -of ]; then OUT=$2; fi; shift; done\n"
+                            "printf '1\\n00:00:00,000 --> 00:00:01,000\\nhello\\n' > \"$OUT.srt\"\n")
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            os.environ["RESOLVE_ASSIST_OUTPUT"] = str(d / "out")
+            old_path = os.environ["PATH"]
+            os.environ["PATH"] = f"{d}:{old_path}"
+            try:
+                model = captions.models_dir() / "ggml-tiny.bin"
+                model.parent.mkdir(parents=True)
+                with model.open("wb") as fh:
+                    fh.write(b"lmgg" + b"\0" * (76 * 1024 * 1024))
+                audio = d / "a.wav"
+                generate("ambient", 1.5, audio)
+                cues = captions.transcribe(audio, model="tiny")
+                self.assertEqual([c.text for c in cues], ["hello"])
+            finally:
+                os.environ["PATH"] = old_path
+                os.environ.pop("RESOLVE_ASSIST_OUTPUT", None)

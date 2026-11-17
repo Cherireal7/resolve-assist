@@ -1,5 +1,5 @@
 --[[
-resolve-assist bridge (Phase 2), protocol 7
+resolve-assist bridge (Phase 2), protocol 8
 
 Runs inside DaVinci Resolve (Free or Studio). Started by the loader that
 `resolve-assist bridge-install` puts on your clipboard, or from the Scripts menu
@@ -20,7 +20,8 @@ local BRIDGE_DIR = BRIDGE_DIR_OVERRIDE or {{BRIDGE_DIR}}
 local LUT_DIR = LUT_DIR_OVERRIDE or {{LUT_DIR}}
 local MEDIA_DIR = MEDIA_DIR_OVERRIDE or {{MEDIA_DIR}}
 local LIBRARY_DIR = LIBRARY_DIR_OVERRIDE or {{LIBRARY_DIR}}
-local PROTOCOL = 7
+local CAPTIONS_DIR = CAPTIONS_DIR_OVERRIDE or {{CAPTIONS_DIR}}
+local PROTOCOL = 8
 local POLL_SECONDS = BRIDGE_POLL_SECONDS or 0.1
 local MAX_LOOPS = BRIDGE_MAX_LOOPS          -- tests only; nil = run until stopped
 local MAX_AGE = 60                          -- seconds a request stays valid
@@ -122,9 +123,17 @@ end
 local function info(it, target)
   if not it then return nil end
   local v = it:GetCurrentVersion() or {}
+  local file, left = nil, nil
+  pcall(function()
+    local mpi = it:GetMediaPoolItem()
+    file = mpi and mpi:GetClipProperty("File Path") or nil
+    if file == "" then file = nil end
+  end)
+  pcall(function() left = it:GetLeftOffset() end)
   return {
     name = it:GetName(), start = it:GetStart(), ["end"] = it:GetEnd(),
     nodes = it:GetNumNodes(), version = v.versionName, target = target,
+    file = file, source_offset = left,
   }
 end
 
@@ -188,7 +197,7 @@ function OPS.list_clips()
       out[#out + 1] = info(it, t .. ":" .. i)
     end
   end
-  return { timeline = tl:GetName(), fps = fps_of(tl), clips = out }
+  return { timeline = tl:GetName(), fps = fps_of(tl), start_frame = tl:GetStartFrame(), clips = out }
 end
 
 function OPS.clip_info(req)
@@ -425,7 +434,7 @@ end
 function OPS.reset_copy()
   local p, tl = project(), timeline()
   if not is_copy(tl) then return { deleted = false, reason = "current timeline is not a resolve-assist copy" } end
-  local original = tl:GetName():gsub(" %(resolve%-assist%)$", "")
+  local original = tl:GetName():gsub(" %(resolve%-assist%)$", ""):gsub(" %d+x%d+$", "")
   local orig = nil
   for i = 1, p:GetTimelineCount() do
     local t = p:GetTimelineByIndex(i)
@@ -481,6 +490,65 @@ function OPS.apply_drx(req)
   return { ok = ok and true or false, previous_version = prev, nodes = it:GetNumNodes(), clip = info(it, req.target) }
 end
 
+
+-- ------------------------------------------------------------------ formats & subtitles
+local FORMATS = { ["9x16"] = { 1080, 1920 }, ["4x5"] = { 1080, 1350 }, ["1x1"] = { 1080, 1080 }, ["16x9"] = { 1920, 1080 } }
+
+function OPS.make_format(req)
+  local fmt = FORMATS[req.format or ""]
+  assert(fmt, "format must be 9x16, 4x5, 1x1 or 16x9")
+  local p, tl = project(), timeline()
+  local base = tl:GetName():gsub(" %(resolve%-assist%)$", ""):gsub(" %d+x%d+$", "")
+  local name = base .. " " .. req.format .. " " .. COPY_TAG
+  local target = nil
+  for i = 1, p:GetTimelineCount() do
+    local t = p:GetTimelineByIndex(i)
+    if t and t:GetName() == name then target = t end
+  end
+  local created = false
+  if not target then
+    target = tl:DuplicateTimeline(name)
+    assert(target, "could not duplicate the timeline")
+    created = true
+  end
+  assert(p:SetCurrentTimeline(target), "could not open " .. name)
+  local applied = {}
+  local function set(k, v) applied[k] = target:SetSetting(k, v) and true or false end
+  set("useCustomSettings", "1")
+  set("timelineResolutionWidth", tostring(fmt[1]))
+  set("timelineResolutionHeight", tostring(fmt[2]))
+  set("timelineOutputResolutionWidth", tostring(fmt[1]))
+  set("timelineOutputResolutionHeight", tostring(fmt[2]))
+  set("timelineInputResMismatchBehavior", "scaleToFit")
+  local now = { width = target:GetSetting("timelineResolutionWidth"), height = target:GetSetting("timelineResolutionHeight"),
+                fit = target:GetSetting("timelineInputResMismatchBehavior") }
+  return { timeline = name, created = created, applied = applied, now = now }
+end
+
+function OPS.import_subtitles(req)
+  local tl = timeline()
+  assert(is_copy(tl), "subtitles are only added to a resolve-assist copy of the timeline")
+  local name = req.file or ""
+  assert(name:match("^[%w][%w _%.%-]*%.srt$") and not name:find("..", 1, true), "invalid subtitle file name")
+  local path = CAPTIONS_DIR .. "/" .. name
+  assert(not bmd.fileexists or bmd.fileexists(path), "subtitle file not found: " .. name)
+  local mp = project():GetMediaPool()
+  local items = mp:ImportMedia({ path })
+  assert(items and items[1], "Resolve could not import the subtitle file")
+  local before = tl:GetTrackCount("subtitle") or 0
+  local placed = false
+  local ok, err = pcall(function()
+    placed = mp:AppendToTimeline({ { mediaPoolItem = items[1], recordFrame = tl:GetStartFrame() } }) and true or false
+  end)
+  if not placed then
+    pcall(function() placed = mp:AppendToTimeline({ items[1] }) and true or false end)
+  end
+  local after = tl:GetTrackCount("subtitle") or 0
+  return { imported = true, placed = placed, subtitle_tracks = after, added_track = after > before,
+           note = (not placed) and "Imported into the Media Pool; drag it onto the timeline to place it." or nil,
+           error = (not ok) and tostring(err) or nil }
+end
+
 function OPS.undo(req)
   local it = item_for(req.target)
   local name = req.version or ""
@@ -496,7 +564,7 @@ end
 
 -- ------------------------------------------------------------------ request loop
 local KEYS = { seq = 1, session = 1, ts = 1, op = 1, target = 1, node = 1, slope = 1, offset = 1,
-               power = 1, saturation = 1, lut = 1, version = 1, file = 1, text = 1, at = 1, duration = 1, files = 1, mode = 1 }
+               power = 1, saturation = 1, lut = 1, version = 1, file = 1, text = 1, at = 1, duration = 1, files = 1, mode = 1, format = 1 }
 local REQUEST = BRIDGE_DIR .. "/request.txt"
 local RESPONSE = BRIDGE_DIR .. "/response.txt"
 local STATUS = BRIDGE_DIR .. "/status.txt"

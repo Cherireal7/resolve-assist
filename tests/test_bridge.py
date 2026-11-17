@@ -118,14 +118,15 @@ end
 local clips = { clip("A.mp4", 86400, 86500), clip("B.mp4", 86500, 86700) }
 local tc = "01:00:00:00"
 local function make_timeline(name)
-  local t = { name = name, tracks = { video = 1, audio = 1 }, locked = {} }
+  local t = { name = name, tracks = { video = 1, audio = 1, subtitle = 0 }, locked = {}, settings = {} }
+  t.SetSetting = function(self, k, v) self.settings[k] = v; RECORD("SetSetting", self.name, k, v, 0); return true end
+  t.GetSetting = function(self, k) if k == "timelineFrameRate" then return "25" end; return self.settings[k] end
   t.GetName = function(self) return self.name end
   t.GetTrackCount = function(self, kind) return self.tracks[kind or "video"] end
   t.AddTrack = function(self, kind) self.tracks[kind] = self.tracks[kind] + 1; return true end
   t.SetTrackLock = function(self, kind, i, v) self.locked[i] = v; return true end
   t.GetItemListInTrack = function(self, kind, i) if i == 1 then return clips end; return {} end
   t.GetCurrentVideoItem = function() return clips[1] end
-  t.GetSetting = function(self, k) if k == "timelineFrameRate" then return "25" end end
   t.SetCurrentTimecode = function(self, v) tc = v; return true end
   t.GetCurrentTimecode = function() return tc end
   t.GetStartFrame = function() return 86400 end
@@ -161,7 +162,7 @@ local media_pool = {
     local out = {}
     for _, p in ipairs(paths) do
       RECORD("ImportMedia", current_folder.name, "", p, #paths)
-      out[#out + 1] = { GetName = function() return p:match("[^/]+$") end,
+      out[#out + 1] = { is_srt = p:match("%.srt$") ~= nil, GetName = function() return p:match("[^/]+$") end,
                         GetClipProperty = function(_, k) if k == "Frames" then return "200" end end }
     end
     return out
@@ -175,6 +176,7 @@ local media_pool = {
   end,
   AppendToTimeline = function(self, infos)
     local i = infos[1]
+    if i.mediaPoolItem and i.mediaPoolItem.is_srt then current.tracks.subtitle = 1; return { {} } end
     RECORD("AppendToTimeline", current.name, tostring(i.trackIndex), tostring(i.endFrame), i.mediaType)
     return { {} }
   end,
@@ -369,6 +371,32 @@ class BridgeEndToEnd(unittest.TestCase):
             Bridge().call("import_media", files="../secret.wav")            # Lua-side check too
         with self.assertRaises(BridgeError):
             Bridge().call("apply_drx", file="sfx/whoosh-medium.wav")        # only powergrades/*.drx
+
+    def test_vertical_format_copy(self):
+        res = api.make_format("9x16")
+        self.assertEqual(res["timeline"], "Timeline 1 9x16 (resolve-assist)")
+        self.assertTrue(res["created"])
+        self.assertEqual((res["now"]["width"], res["now"]["height"]), ("1080", "1920"))
+        self.assertEqual(res["now"]["fit"], "scaleToFit")
+        again = api.make_format("9x16")                       # from the copy: reuses, no copy-of-copy
+        self.assertFalse(again["created"])
+        self.assertEqual(again["timeline"], "Timeline 1 9x16 (resolve-assist)")
+        with self.assertRaises(ValueError):
+            api.make_format("21x9")
+        self.assertEqual(api.reset_copy()["original"], "Timeline 1")
+
+    def test_import_subtitles_only_on_copy(self):
+        caps = self.env.root / "out" / "captions"
+        caps.mkdir(parents=True, exist_ok=True)
+        (caps / "t.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n")
+        with self.assertRaises(BridgeError):
+            Bridge().call("import_subtitles", file="t.srt")   # original timeline refused
+        Bridge().call("duplicate_timeline")
+        res = Bridge().call("import_subtitles", file="t.srt")
+        self.assertTrue(res["placed"])
+        self.assertTrue(res["added_track"])
+        with self.assertRaises(BridgeError):
+            Bridge().call("import_subtitles", file="../x.srt")
 
     def test_stabilize(self):
         res = api.stabilize("current")
