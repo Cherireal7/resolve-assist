@@ -59,6 +59,20 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("install-probe", help="install the read-only probe into Resolve's Scripts menu")
     sub.add_parser("probe-report", help="show the probe result")
+    bi = sub.add_parser("bridge-install", help="install the live bridge and copy its starter to the clipboard")
+    bi.add_argument("--no-copy", action="store_true")
+    sub.add_parser("bridge-status", help="is the bridge running in Resolve?")
+    sub.add_parser("bridge-stop", help="stop the bridge in Resolve")
+    sub.add_parser("clips", help="list clips on the current timeline")
+    g = sub.add_parser("grab", help="grab + analyze a frame from Resolve")
+    g.add_argument("target", nargs="?", default="current")
+    ap = sub.add_parser("apply", help="apply a grade to a clip in Resolve (dry run unless --yes)")
+    ap.add_argument("target", nargs="?", default="current")
+    grade_args(ap)
+    ap.add_argument("--node", type=int, default=1)
+    ap.add_argument("--yes", action="store_true", help="really apply (otherwise only show the plan)")
+    un = sub.add_parser("undo", help="restore the clip's previous grade version")
+    un.add_argument("target", nargs="?", default="current")
     sub.add_parser("serve", help="run the MCP server (stdio)")
 
     args = p.parse_args(argv)
@@ -83,6 +97,24 @@ def main(argv: list[str] | None = None) -> int:
             _print(api.install_probe())
         elif args.cmd == "probe-report":
             _print(api.probe_report())
+        elif args.cmd == "bridge-install":
+            res = api.bridge_install(not args.no_copy)
+            print(res["loader"])
+            print("Copied to clipboard." if res["loader_copied_to_clipboard"] else "Copy the code above.")
+            print(res["next"])
+        elif args.cmd == "bridge-status":
+            _print(api.bridge_status())
+        elif args.cmd == "bridge-stop":
+            _print(api.bridge_stop())
+        elif args.cmd == "clips":
+            _print(api.clips())
+        elif args.cmd == "grab":
+            _print(api.analyze_clip(args.target))
+        elif args.cmd == "apply":
+            _print(api.apply_grade(args.target, args.slope, args.offset, args.power, args.saturation,
+                                   args.look, args.strength, args.node, confirm=args.yes))
+        elif args.cmd == "undo":
+            _print(api.undo_grade(args.target))
         elif args.cmd == "serve":
             try:
                 from .server import main as serve

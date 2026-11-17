@@ -4,6 +4,17 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (Phase 2: live Resolve)
+- Lua bridge (`bridge.lua`) over a shared folder with `fu:OpenFile`: works in the sandboxed App Store build.
+- Allowlisted ops: status, list_clips, clip_info, goto_clip, grab_frame, apply_cdl, apply_lut, undo, stop.
+- `apply_grade` (dry run unless confirmed; separate `resolve-assist` grade version; re-measures the result),
+  `undo_grade`, `analyze_clip`, `list_clips`, `bridge_status` as MCP tools and CLI commands.
+- Session ids, request expiry, heartbeat, audit journal, Scripts-menu entry on first run.
+- End-to-end tests running the real bridge in a Lua runtime against a fake Resolve.
+
+### Fixed
+- Client retries reading the heartbeat file while Lua is rewriting it (found by the end-to-end test).
+
 ### Fixed
 - Analysis ignores letterbox/pillarbox black bars (found on real footage: vertical phone video in a 16:9 timeline had 68% bars and skewed every measurement).
 - A single number passed as text (e.g. `--offset -0.01`) now applies to all channels.

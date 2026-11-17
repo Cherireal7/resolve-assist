@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from importlib import resources
 from pathlib import Path
 from typing import Any, Sequence
@@ -253,3 +254,116 @@ def _parse_lua_json_field(text: str) -> dict:
         out.append(c)
         i += 1
     raise ValueError("unterminated json string in Lua probe report")
+
+
+# --------------------------------------------------------------------------- Phase 2: live Resolve
+
+def _bridge():
+    from .bridge import Bridge
+    return Bridge()
+
+
+def bridge_install(copy_to_clipboard: bool = True) -> dict:
+    from .bridge import install
+    return install(copy_to_clipboard)
+
+
+def bridge_status() -> dict:
+    b = _bridge()
+    st = b.status()
+    if st.get("running"):
+        try:
+            st["resolve"] = b.call("status", timeout=10)
+        except Exception as exc:  # status file fine but call failed: report, don't crash
+            st["call_error"] = str(exc)
+    return st
+
+
+def bridge_stop() -> dict:
+    return _bridge().call("stop", timeout=10)
+
+
+def clips() -> dict:
+    return _bridge().call("list_clips")
+
+
+def grab_frame(target: str = "current") -> dict:
+    res = _bridge().call("grab_frame", timeout=45, target=target)
+    path = Path(res["path"])
+    deadline = time.monotonic() + 10
+    while not path.is_file() and time.monotonic() < deadline:  # export may finish after the reply
+        time.sleep(0.1)
+    if not path.is_file():
+        raise RuntimeError("Resolve reported success but the frame file did not appear")
+    return res
+
+
+def analyze_clip(target: str = "current") -> dict:
+    """Grab the frame under the playhead (or the middle of a clip) and analyze it."""
+    frame = grab_frame(target)
+    return {"clip": frame.get("clip"), "frame_path": frame["path"], "analysis": analyze(frame["path"])}
+
+
+def apply_grade(
+    target: str = "current",
+    slope: Any = 1.0, offset: Any = 0.0, power: Any = 1.0, saturation: float = 1.0,
+    look: str | None = None, strength: float = 1.0, node: int = 1,
+    confirm: bool = False, verify: bool = True,
+) -> dict:
+    """Apply a correction (and optional look) to a clip in Resolve.
+
+    Without a look: exact CDL via SetCDL (editable in Resolve's CDL panel).
+    With a look: a .cube is generated (correction + look) and loaded on the node.
+    confirm=False only returns the plan (dry run). Changes go into a separate
+    'resolve-assist' grade version, so the original grade is kept for undo.
+    """
+    if look is not None and look not in LOOKS:
+        raise ValueError(f"unknown look '{look}'. Available: {', '.join(LOOKS)}")
+    if not (1 <= int(node) <= 64):
+        raise ValueError("node must be 1..64")
+    cdl = _build_cdl(slope, offset, power, saturation)
+    method = "lut" if look else "cdl"
+    plan: dict[str, Any] = {"target": target, "node": int(node), "method": method,
+                            "version": "changes go into grade version 'resolve-assist' (undo restores yours)"}
+    if method == "cdl":
+        applied = cdl.blend(strength)
+        plan["cdl"] = applied.resolve_strings()
+    else:
+        plan["look"] = look
+        plan["strength"] = strength
+        plan["correction_cdl"] = cdl.resolve_strings()
+    if not confirm:
+        return {"dry_run": True, "plan": plan,
+                "next": "Show the plan (and a render_preview) to the user; call again with confirm=true if they agree."}
+    b = _bridge()
+    if method == "cdl":
+        s = applied.resolve_strings()
+        res = b.call("apply_cdl", target=target, node=int(node), slope=s["Slope"], offset=s["Offset"],
+                     power=s["Power"], saturation=s["Saturation"])
+    else:
+        lut = make_lut(f"ra-{look}-{int(time.time())}", look=look, strength=strength, slope=cdl.slope,
+                       offset=cdl.offset, power=cdl.power, saturation=cdl.saturation, size=33)
+        res = b.call("apply_lut", target=target, node=int(node), lut=Path(lut["lut_path"]).name)
+        plan["lut_path"] = lut["lut_path"]
+    if not res.get("ok"):
+        raise RuntimeError(f"Resolve did not accept the change: {res}")
+    b.remember_previous(res.get("clip") or {}, res.get("previous_version"))
+    out: dict[str, Any] = {"applied": True, "plan": plan, "resolve": res}
+    if verify:
+        try:
+            after = analyze_clip(target)
+            out["after"] = {"frame_path": after["frame_path"], "cast": after["analysis"]["cast"],
+                            "median_luma": after["analysis"]["luma"]["p50"],
+                            "warnings": after["analysis"]["warnings"]}
+        except Exception as exc:
+            out["verify_error"] = str(exc)
+    return out
+
+
+def undo_grade(target: str = "current") -> dict:
+    """Switch the clip back to the grade version it had before resolve-assist changed it."""
+    b = _bridge()
+    clip = b.call("clip_info", target=target)
+    previous = b.previous_version(clip) or "Version 1"
+    res = b.call("undo", target=target, version=previous)
+    return {"restored_version": previous, "resolve": res}

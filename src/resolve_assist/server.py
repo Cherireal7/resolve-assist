@@ -16,7 +16,10 @@ mcp = FastMCP(
         "(Resolve: right-click viewer → Grab Still → Gallery → Export, PNG preferred) "
         "or gives a video path. Use analyze_frame first, then suggest_balance / match_shots, "
         "render_preview to check the result visually, and make_lut to deliver a .cube. "
-        "Never claim a change was applied inside Resolve: this version only writes files. "
+        "Live Resolve (Phase 2): if bridge_status says running, use analyze_clip to grab and "
+        "measure frames yourself, apply_grade to change a clip (ALWAYS dry run first, show the "
+        "plan and a preview, and only call with confirm=true after the user agrees), and "
+        "undo_grade to restore. Never claim a change happened unless apply_grade returned applied=true. "
         "Report confidence and warnings honestly."
     ),
 )
@@ -89,6 +92,41 @@ def make_lut(name: str, look: Optional[str] = None, strength: float = 1.0,
 def resolve_probe_report() -> str:
     """Read what the in-Resolve probe found out about this Resolve install's scripting API."""
     return _run(api.probe_report)
+
+
+@mcp.tool()
+def bridge_status() -> str:
+    """Is the in-Resolve bridge running? Shows project, timeline and the clip under the playhead."""
+    return _run(api.bridge_status)
+
+
+@mcp.tool()
+def list_clips() -> str:
+    """List video clips on the current timeline with their target ids ('track:index')."""
+    return _run(api.clips)
+
+
+@mcp.tool()
+def analyze_clip(target: str = "current") -> str:
+    """Grab the current frame (or the middle of clip 'track:index') from Resolve and analyze it."""
+    return _run(api.analyze_clip, target=target)
+
+
+@mcp.tool()
+def apply_grade(target: str = "current", slope: str = "1 1 1", offset: str = "0 0 0", power: str = "1 1 1",
+                saturation: float = 1.0, look: Optional[str] = None, strength: float = 1.0, node: int = 1,
+                confirm: bool = False) -> str:
+    """Apply a CDL correction (and optional look via LUT) to a clip in Resolve.
+    confirm=false returns the plan only. Use confirm=true only after the user approved.
+    Changes go to a separate 'resolve-assist' grade version; the result is re-measured."""
+    return _run(api.apply_grade, target=target, slope=slope, offset=offset, power=power,
+                saturation=saturation, look=look, strength=strength, node=node, confirm=confirm)
+
+
+@mcp.tool()
+def undo_grade(target: str = "current") -> str:
+    """Restore the clip's grade version from before resolve-assist changed it."""
+    return _run(api.undo_grade, target=target)
 
 
 def main() -> None:

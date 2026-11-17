@@ -5,10 +5,12 @@ suggests corrections, matches shots, and writes `.cube` LUTs that Resolve Free c
 It works with Claude (or any MCP client) or from the command line.
 
 - 🔒 **Local only.** No uploads, no telemetry. The core uses only the Python standard library.
-- 🛡️ **Can't damage your project.** v0.1 only *reads* your stills and *writes* LUT files.
+- 🛡️ **Safe with your project.** Grades are applied only after you confirm, into a separate
+  `resolve-assist` grade version; undo switches back to yours.
 - 🧯 **Fallbacks everywhere.** ffmpeg → macOS `sips` → built-in PNG decoder.
 
-> Status: v0.1 (Phase 0 + 1). Direct "apply to clip inside Resolve" is Phase 2.
+> Status: v0.2 (Phase 2): the AI can grab frames from Resolve and apply grades to clips
+> (dry run first, separate grade version, one-step undo). Tested on Resolve Free 21.2 (App Store build).
 > See [PROJECT.md](PROJECT.md) for goals, architecture, security and roadmap.
 
 ## Install
@@ -40,6 +42,25 @@ claude mcp add resolve-assist -- "$PWD/.venv/bin/resolve-assist-mcp"
 4. In Resolve: Project Settings → Color Management → **Open LUT Folder** → copy the `.cube`
    there (or use `install_to_resolve`) → **Update Lists** → right-click a node → **LUT**.
 
+## Live mode (Phase 2)
+
+```bash
+resolve-assist bridge-install   # copies a starter snippet to your clipboard
+```
+
+In Resolve: **Workspace → Console**, click the input line, paste (⌘V), Enter. Leave it running.
+After the first run it is also in **Workspace → Scripts → resolve-assist Bridge**.
+
+```bash
+resolve-assist bridge-status
+resolve-assist clips
+resolve-assist grab              # export + analyze the frame under the playhead
+resolve-assist apply --slope "1 1.05 1.1"          # shows the plan only
+resolve-assist apply --slope "1 1.05 1.1" --yes    # applies it
+resolve-assist undo
+resolve-assist bridge-stop
+```
+
 ## CLI
 
 ```bash
@@ -65,6 +86,11 @@ resolve-assist probe-report
 | `render_preview` | Before/after PNG rendered locally |
 | `make_lut` | `.cube` (17/33/65) + `.cc` written to `~/Documents/resolve-assist/LUTs` |
 | `resolve_probe_report` | What this Resolve install's scripting API allows |
+| `bridge_status` | Is the live bridge running; project, timeline, clip under the playhead |
+| `list_clips` | Clips on the timeline with ids (`track:index`) |
+| `analyze_clip` | Grab a frame from Resolve and analyze it |
+| `apply_grade` | Apply CDL (or a look via LUT) to a clip: dry run unless `confirm=true` |
+| `undo_grade` | Restore the clip's previous grade version |
 
 ## Development
 

@@ -128,12 +128,18 @@ and only for the server. The CLI works without it.
 - [ ] Manual test: LUT loaded in Resolve Free 21.2 (S2).
 
 ### Phase 2: In-Resolve agent (v0.2)
-- File-queue transport using whatever Phase 0 proves available.
-- Allowlisted ops: `status`, `list_clips`, `apply_lut(clip, node, path)`,
-  `set_cdl(clip, node, values)`, `grab_still?` (if API allows), `undo_last`.
-- Every write op: dry-run first, records previous state for undo, refuses
-  locked tracks, and refuses LUT paths outside the allowlist.
-- Single-instance lock, heartbeat, request expiry.
+- [x] Transport proven by the probe: shared folder `~/Documents/resolve-assist/bridge` + `fu:OpenFile`
+      (works in the sandboxed App Store build; no `io` there).
+- [x] Allowlisted ops: `status`, `list_clips`, `clip_info`, `goto_clip`, `grab_frame`,
+      `apply_cdl`, `apply_lut`, `undo`, `stop`. Request data is never executed.
+- [x] Safety: dry run by default (`confirm=true` needed), changes go into a separate
+      `resolve-assist` grade version (undo = load the previous version), LUTs only from the
+      LUT folder, session id + 60 s expiry, journal of every call.
+- [x] Heartbeat; Scripts-menu entry installed by the bridge on first run.
+- [x] End-to-end tests: real `bridge.lua` in LuaJIT/Lua 5.1 (lupa) ↔ real client through real files.
+- [ ] Live test on Free 21.2 (App Store): start, list, grab, apply CDL, apply LUT, undo.
+- Open questions for the live test: does `AddVersion` start empty or copy the grade? Does
+  `ExportCurrentFrameAsStill` include the grade? Does the Console stay usable while the loop runs?
 
 ### Phase 3: Workflow features (v0.3+)
 - Batch: balance every clip from frames exported per clip.
