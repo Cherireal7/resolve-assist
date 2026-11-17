@@ -115,7 +115,7 @@ and only for the server. The CLI works without it.
 - [x] Writes `~/.resolve-assist/probe-report.json` with a fallback chain
       (`io` → `bmd.writefile` → console print).
 - [x] `resolve-assist install-probe` / `resolve-assist probe-report`.
-- [ ] Run on the real Free 21.2 install → record in `docs/COMPATIBILITY.md`.
+- [x] Run on the real Free 21.2 install → recorded in `docs/COMPATIBILITY.md` (2026-11-17).
 
 ### Phase 1: Offline grading engine + MCP (v0.1)
 - [x] Analyze stills/frames; built-in PNG decoder; ffmpeg when present.
@@ -125,7 +125,7 @@ and only for the server. The CLI works without it.
 - [x] Shot match (per-channel mean/std transfer → CDL).
 - [x] Look library (6 starter looks) with strength control.
 - [x] MCP server + CLI.
-- [ ] Manual test: LUT loaded in Resolve Free 21.2 (S2).
+- [x] Live: Resolve Free 21.2 (App Store) refuses LUTs from outside its LUT folders → CDL fallback (see Phase 2).
 
 ### Phase 2: In-Resolve agent (v0.2)
 - [x] Transport proven by the probe: shared folder `~/Documents/resolve-assist/bridge` + `fu:OpenFile`
@@ -137,16 +137,73 @@ and only for the server. The CLI works without it.
       LUT folder, session id + 60 s expiry, journal of every call.
 - [x] Heartbeat; Scripts-menu entry installed by the bridge on first run.
 - [x] End-to-end tests: real `bridge.lua` in LuaJIT/Lua 5.1 (lupa) ↔ real client through real files.
-- [ ] Live test on Free 21.2 (App Store): start, list, grab, apply CDL, apply LUT, undo.
-- Open questions for the live test: does `AddVersion` start empty or copy the grade? Does
-  `ExportCurrentFrameAsStill` include the grade? Does the Console stay usable while the loop runs?
+- [x] Live test on Free 21.2 (App Store), 2026-11-17: start, status, list, grab (frames include the
+      grade), apply CDL in a new `resolve-assist` version, stabilize, look via CDL approximation,
+      music on a timeline copy: all ✅. LUT load ❌ (Resolve refuses outside its LUT folders).
+- [ ] **Open bug: Fusion title does not render.** Text+ → Merge → MediaOut nodes exist inside the
+      clip comp (verified by tool list) but neither the viewer nor exported frames show text.
+      Next checks: read back MediaOut's connected input; build nodes via `comp:Execute()` in comp
+      context (what the reviewed Free bridge does); check comp `Lock()`; test a solid Background
+      node instead of Text+ to separate "wiring" from "text".
+- [ ] Find the color page LUT folder of the App Store build (Project Settings → Color Management →
+      Open LUT Folder) so real LUTs work instead of the CDL approximation.
 
-### Phase 3: Workflow features (v0.3+)
-- Batch: balance every clip from frames exported per clip.
-- Look library persistence (`~/.resolve-assist/looks/*.json`), A/B previews
-  (before/after PNG rendered by our own LUT engine).
-- Scene-referred / log input awareness (LOG-C, S-Log3, V-Log → Rec.709).
-- Optional: Claude vision for creative direction ("make it feel like dusk").
+---
+
+## 4b. Roadmap: from color assistant to AI editing partner
+
+Principle (unchanged): every feature works **offline first** (analysis, plans, previews, files), and
+the live bridge only applies the result: on a timeline copy or a separate grade version, with undo.
+Feasibility marks: ✅ verified on Free 21.2 · 🔶 API exists, untested · 🧪 offline only · ⛔ Studio only.
+
+### Phase 3: Fusion effects that render (v0.3)
+Prerequisite for titles and most effects: fix the open Fusion bug above.
+| Feature | How | Status |
+|---|---|---|
+| Titles / lower thirds (fade in/out, safe-area aware for 9:16) | Text+ inside the clip comp | 🔶 (bug) |
+| Punch-in / slow zoom (Ken Burns), shake, whip-pan blur | Transform + keyframes in clip comp | 🔶 |
+| Blur, glow, vignette, film grain, light leaks | Fusion tools in a bridge-owned chain before MediaOut | 🔶 |
+| Speed ramps / freeze frames | TimeSpeed node in comp (reviewed bridge does this on Free) | 🔶 |
+| Effect presets as JSON (`effects/*.json`) the AI can combine | ours | 🧪 |
+
+### Phase 4: Analysis engine (v0.4): "understand the footage"
+| Feature | How | Status |
+|---|---|---|
+| Shot/scene detection, best-frame picker per shot | frame differences on ffmpeg-decoded thumbnails (or frames grabbed via bridge) | 🧪 |
+| Visual fingerprints per shot start/end: luma layout grid, edge-orientation histogram, dominant colors, brightness centroid, motion direction | stdlib math on thumbnails | 🧪 |
+| **Match-cut finder**: rank shot pairs whose end/start frames share shape, position, color or motion; suggest exact cut frames | fingerprint similarity | 🧪 |
+| Music analysis: tempo, beat grid, downbeats, energy curve | stdlib onset detection on WAV (ffmpeg decodes mp3) | 🧪 |
+| Shake / blur / exposure problems per shot (choose what to stabilize or drop) | frame stats | 🧪 |
+| Speech segments (silence detection) for talking-head cuts | audio RMS | 🧪 |
+
+### Phase 5: Edit assembly (v0.5): "make the cut"
+| Feature | How | Status |
+|---|---|---|
+| Rough cut from selected shots (in/out ranges) on a new timeline | `MediaPool:CreateEmptyTimeline` + `AppendToTimeline` with ranges | 🔶 |
+| **Beat-synced cutting**: cut points snapped to beats/downbeats | analysis + append ranges | 🧪→🔶 |
+| **Match cuts / jump cuts** placed from the finder; J/L-cut audio offsets | append ranges per track | 🔶 |
+| Markers for beats, best moments, problems | `Timeline:AddMarker` | 🔶 |
+| Transitions (cross-dissolve, dip, zoom/whip) | Fusion transition comps or overlap + Merge blend | 🔶 |
+| Vertical (9:16) timeline for phone footage, safe areas | `Timeline:SetSetting` resolution (Smart Reframe is ⛔) | 🔶 |
+| Edit plan preview without Resolve: storyboard PNG + timing sheet | ours | 🧪 |
+
+### Phase 6: Delivery (v0.6)
+| Feature | How | Status |
+|---|---|---|
+| Render queue with presets (Instagram/TikTok/YouTube), Free limits (UHD/60) checked first | `SetRenderSettings`, `AddRenderJob`, `StartRendering` | 🔶 |
+| Loudness check of the export (target −14 LUFS for social) | offline audio analysis | 🧪 |
+| Thumbnail / cover frame suggestions | best-frame picker | 🧪 |
+
+### Phase 7: Polish & platform (v1.0)
+- One-command setup (`resolve-assist setup`: venv, MCP registration, bridge install).
+- Claude Code skill/prompt with the full workflow; MCP prompts for "grade this", "cut to the beat".
+- Docs with screenshots; compatibility matrix; release automation (tags → GitHub releases).
+- Optional: look and effect library browser (local HTML page) with previews.
+
+### Order of work
+1. Phase 4 analysis engine (fully testable offline, no Resolve needed) → match-cut finder + beat grid.
+2. Fix the Fusion render bug (needs one live session) → Phase 3 effects.
+3. Phase 5 assembly on timeline copies → Phase 6 delivery → Phase 7.
 
 ---
 
