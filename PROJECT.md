@@ -179,8 +179,8 @@ Prerequisite for titles and most effects: fix the open Fusion bug above.
 ### Phase 5: Edit assembly (v0.5): "make the cut"
 | Feature | How | Status |
 |---|---|---|
-| Rough cut from selected shots (in/out ranges) on a new timeline | `MediaPool:CreateEmptyTimeline` + `AppendToTimeline` with ranges | 🔶 |
-| **Beat-synced cutting**: cut points snapped to beats/downbeats | analysis + append ranges | 🧪→🔶 |
+| Rough cut from selected shots (in/out ranges) on a new timeline | `MediaPool:CreateEmptyTimeline` + `AppendToTimeline` with ranges | 🔶 built (protocol 9), live test pending |
+| **Beat-synced cutting**: cut points snapped to beats/downbeats + SFX on cuts + markers | analysis + append ranges | 🔶 built, live test pending |
 | **Match cuts / jump cuts** placed from the finder; J/L-cut audio offsets | append ranges per track | 🔶 |
 | Markers for beats, best moments, problems | `Timeline:AddMarker` | 🔶 |
 | Transitions (cross-dissolve, dip, zoom/whip) | Fusion transition comps or overlap + Merge blend | 🔶 |

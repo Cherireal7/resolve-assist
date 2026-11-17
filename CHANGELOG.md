@@ -4,6 +4,14 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (Phase 5: assembly + workspace)
+- `build_edit` / `assemble_beat_edit`: build a NEW '(resolve-assist)' timeline from a plan: segments
+  frame-accurate from the Media Pool (reused by file path), music on A1, a library SFX on every cut
+  (A2, lead-in 0.4 s), a marker per cut. Only resolve-assist folders may be imported (protocol 9).
+- `doctor`: checks Resolve, bridge version, ffmpeg, whisper, model, library, Claude connection, disk.
+- Workspace guide (`~/Documents/resolve-assist/CLAUDE.md`) and `new_project` folder template.
+- Bridge stores resolved folder paths (fixes /var vs /private/var mismatch found by tests).
+
 ### Added (social formats & captions)
 - `make_format`: copy the timeline into 9x16 / 4x5 / 1x1 / 16x9 with clips scaled to fit (bridge protocol 8).
 - `auto_captions`: local whisper.cpp transcription → short social-style SRT; for a file or the whole

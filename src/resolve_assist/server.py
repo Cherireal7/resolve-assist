@@ -231,6 +231,39 @@ def auto_captions(path: Optional[str] = None, model: str = "base", language: str
                 add_to_resolve=add_to_resolve)
 
 
+@mcp.tool()
+def assemble_beat_edit(videos: list[str], music: str, beats_per_cut: int = 2, order: str = "match",
+                       max_seconds: Optional[float] = None, sfx_on_cuts: Optional[str] = "whoosh-medium",
+                       title: str = "Beat edit") -> str:
+    """Analyze footage + music and BUILD the edit in Resolve: a new '(resolve-assist)' timeline cut on
+    the beat in match-cut order, music on A1, an SFX from the library on every cut (None = no SFX),
+    a marker per cut. Footage already in the Media Pool is reused."""
+    return _run(api.assemble_beat_edit, videos=videos, music=music, beats_per_cut=beats_per_cut,
+                order=order, max_seconds=max_seconds, sfx_on_cuts=sfx_on_cuts, title=title)
+
+
+@mcp.tool()
+def build_edit(segments: list[dict], title: str = "Edit", music: Optional[str] = None,
+               sfx_on_cuts: Optional[str] = None) -> str:
+    """Build a new '(resolve-assist)' timeline from segments [{source, source_in, source_out}] in
+    seconds (e.g. from beat_edit_plan or your own selection of best moments / match cuts)."""
+    return _run(api.build_edit, segments=segments, title=title, music=music, sfx_on_cuts=sfx_on_cuts)
+
+
+@mcp.tool()
+def doctor() -> str:
+    """Check the whole setup (Resolve, bridge version, ffmpeg, whisper, library, Claude connection)
+    and return exact fixes. Run this when something doesn't work."""
+    return _run(api.doctor)
+
+
+@mcp.tool()
+def new_project(name: str) -> str:
+    """Create ~/Documents/resolve-assist/projects/<name>/ with footage, music, stills, exports,
+    captions folders and a notes.md checklist."""
+    return _run(api.new_project, name=name)
+
+
 def main() -> None:
     mcp.run()
 

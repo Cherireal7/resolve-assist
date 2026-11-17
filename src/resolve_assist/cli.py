@@ -115,6 +115,18 @@ def main(argv: list[str] | None = None) -> int:
     cp.add_argument("--language", default="auto")
     cp.add_argument("--max-chars", type=int, default=32)
     cp.add_argument("--no-resolve", action="store_true")
+    ab = sub.add_parser("beat-edit", help="analyze + build a beat/match-cut edit in Resolve")
+    ab.add_argument("music")
+    ab.add_argument("videos", nargs="+")
+    ab.add_argument("--beats-per-cut", type=int, default=2)
+    ab.add_argument("--order", choices=("match", "original"), default="match")
+    ab.add_argument("--max-seconds", type=float)
+    ab.add_argument("--sfx", default="whoosh-medium", help="library SFX on every cut, or 'none'")
+    ab.add_argument("--title", default="Beat edit")
+    sub.add_parser("doctor", help="check the whole setup and show fixes")
+    sub.add_parser("workspace", help="(re)create the workspace guide in ~/Documents/resolve-assist")
+    np_ = sub.add_parser("new-project", help="create a project folder with footage/music/exports/...")
+    np_.add_argument("name")
     sub.add_parser("serve", help="run the MCP server (stdio)")
 
     args = p.parse_args(argv)
@@ -192,6 +204,21 @@ def main(argv: list[str] | None = None) -> int:
                 _print(api.captions_for_file(args.path, args.model, args.language, args.max_chars))
             else:
                 _print(api.captions_for_timeline(args.model, args.language, args.max_chars, not args.no_resolve))
+        elif args.cmd == "beat-edit":
+            _print(api.assemble_beat_edit(args.videos, args.music, args.beats_per_cut, args.order,
+                                          args.max_seconds, None if args.sfx == "none" else args.sfx, args.title))
+        elif args.cmd == "doctor":
+            res = api.doctor()
+            for c in res["checks"]:
+                mark = "✅" if c["ok"] else "❌"
+                print(f"{mark} {c['check']:24s} {c['detail']}")
+                if not c["ok"] and c.get("fix"):
+                    print(f"   → {c['fix']}")
+            print("\nREADY" if res["ready"] else "\nSome things need fixing (see →).")
+        elif args.cmd == "workspace":
+            _print(api.init_workspace())
+        elif args.cmd == "new-project":
+            _print(api.new_project(args.name))
         elif args.cmd == "serve":
             try:
                 from .server import main as serve

@@ -24,12 +24,13 @@ from typing import Any
 
 from .paths import output_dir
 
-PROTOCOL = 8
+PROTOCOL = 9
 HEARTBEAT_STALE_S = 10.0
 ALLOWED_OPS = {"status", "list_clips", "clip_info", "goto_clip", "grab_frame",
                "apply_cdl", "apply_lut", "stabilize", "undo", "stop",
                "duplicate_timeline", "add_music", "add_title", "reset_copy",
-               "import_media", "apply_drx", "make_format", "import_subtitles"}
+               "import_media", "apply_drx", "make_format", "import_subtitles",
+               "build_edit"}
 ALLOWED_PARAMS = {"target", "node", "slope", "offset", "power", "saturation", "lut", "version",
                   "file", "text", "at", "duration", "files", "mode", "format"}
 _VALUE_RE = re.compile(r"^[^\t\r\n\x00]{0,4096}$")
@@ -82,12 +83,15 @@ def install(copy_to_clipboard: bool = True) -> dict:
     lut_dir().mkdir(parents=True, exist_ok=True)
     media_dir().mkdir(parents=True, exist_ok=True)
     (output_dir() / "captions").mkdir(parents=True, exist_ok=True)
+    (root / "plans").mkdir(parents=True, exist_ok=True)
     source = resources.files("resolve_assist").joinpath("lua/bridge.lua").read_text(encoding="utf-8")
-    rendered = (source.replace("{{BRIDGE_DIR}}", _lua_string(str(root)))
-                      .replace("{{LUT_DIR}}", _lua_string(str(lut_dir())))
-                      .replace("{{MEDIA_DIR}}", _lua_string(str(media_dir())))
-                      .replace("{{LIBRARY_DIR}}", _lua_string(str(output_dir() / "library")))
-                      .replace("{{CAPTIONS_DIR}}", _lua_string(str(output_dir() / "captions"))))
+    # Resolved paths: Python compares resolved paths too (macOS links /var → /private/var etc.).
+    out = output_dir().resolve()
+    rendered = (source.replace("{{BRIDGE_DIR}}", _lua_string(str(root.resolve())))
+                      .replace("{{LUT_DIR}}", _lua_string(str(lut_dir().resolve())))
+                      .replace("{{MEDIA_DIR}}", _lua_string(str(media_dir().resolve())))
+                      .replace("{{LIBRARY_DIR}}", _lua_string(str(out / "library")))
+                      .replace("{{CAPTIONS_DIR}}", _lua_string(str(out / "captions"))))
     bridge_file = root / "bridge.lua"
     bridge_file.write_text(rendered, encoding="utf-8")
     loader = loader_code(bridge_file)

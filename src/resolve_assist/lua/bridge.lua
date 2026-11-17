@@ -1,5 +1,5 @@
 --[[
-resolve-assist bridge (Phase 2), protocol 8
+resolve-assist bridge (Phase 2), protocol 9
 
 Runs inside DaVinci Resolve (Free or Studio). Started by the loader that
 `resolve-assist bridge-install` puts on your clipboard, or from the Scripts menu
@@ -21,7 +21,7 @@ local LUT_DIR = LUT_DIR_OVERRIDE or {{LUT_DIR}}
 local MEDIA_DIR = MEDIA_DIR_OVERRIDE or {{MEDIA_DIR}}
 local LIBRARY_DIR = LIBRARY_DIR_OVERRIDE or {{LIBRARY_DIR}}
 local CAPTIONS_DIR = CAPTIONS_DIR_OVERRIDE or {{CAPTIONS_DIR}}
-local PROTOCOL = 8
+local PROTOCOL = 9
 local POLL_SECONDS = BRIDGE_POLL_SECONDS or 0.1
 local MAX_LOOPS = BRIDGE_MAX_LOOPS          -- tests only; nil = run until stopped
 local MAX_AGE = 60                          -- seconds a request stays valid
@@ -547,6 +547,114 @@ function OPS.import_subtitles(req)
   return { imported = true, placed = placed, subtitle_tracks = after, added_track = after > before,
            note = (not placed) and "Imported into the Media Pool; drag it onto the timeline to place it." or nil,
            error = (not ok) and tostring(err) or nil }
+end
+
+
+-- ------------------------------------------------------------------ edit assembly (Phase 5)
+-- A plan file (written by resolve-assist into bridge/plans) becomes a NEW timeline:
+--   title<TAB>name | seg<TAB>path<TAB>in_s<TAB>out_s | music<TAB>path | sfx<TAB>path<TAB>at_s | marker<TAB>at_s<TAB>label
+-- Media already in the Media Pool is reused by file path; anything else may only be imported
+-- from the resolve-assist folders (projects, media, library).
+local WORKSPACE_DIR = LIBRARY_DIR:gsub("/library$", "")
+
+local function allowed_media(path)
+  for _, sub in ipairs({ "/projects/", "/media/", "/library/" }) do
+    local root = WORKSPACE_DIR .. sub
+    if path:sub(1, #root) == root and not path:find("..", 1, true) then return true end
+  end
+  return false
+end
+
+local function pool_by_path(mp)
+  local map = {}
+  local function walk(folder, depth)
+    if not folder or depth > 8 then return end
+    for _, clip in ipairs(folder:GetClipList() or {}) do
+      local ok, fp = pcall(function() return clip:GetClipProperty("File Path") end)
+      if ok and type(fp) == "string" and fp ~= "" then map[fp] = clip end
+    end
+    for _, sub in ipairs(folder:GetSubFolderList() or {}) do walk(sub, depth + 1) end
+  end
+  walk(mp:GetRootFolder(), 0)
+  return map
+end
+
+function OPS.build_edit(req)
+  local name = req.file or ""
+  assert(name:match("^[%w][%w _%.%-]*%.plan$") and not name:find("..", 1, true), "invalid plan file name")
+  local lines = read_lines(BRIDGE_DIR .. "/plans/" .. name, 262144)
+  assert(lines and #lines > 0, "plan not found: " .. name)
+  local title, segs, music, sfx, markers = "Beat edit", {}, nil, {}, {}
+  for _, line in ipairs(lines) do
+    local f = {}
+    for part in (line .. "\t"):gmatch("([^\t]*)\t") do f[#f + 1] = part end
+    if f[1] == "title" then title = f[2]
+    elseif f[1] == "seg" then segs[#segs + 1] = { path = f[2], a = tonumber(f[3]), b = tonumber(f[4]) }
+    elseif f[1] == "music" then music = f[2]
+    elseif f[1] == "sfx" then sfx[#sfx + 1] = { path = f[2], at = tonumber(f[3]) }
+    elseif f[1] == "marker" then markers[#markers + 1] = { at = tonumber(f[2]), label = f[3] or "cut" } end
+  end
+  assert(#segs >= 1 and #segs <= 400, "plan needs 1..400 segments")
+  assert(title:match("^[%w][%w _%.%-]*$"), "invalid title")
+  local p = project()
+  local mp = p:GetMediaPool()
+  local pool = pool_by_path(mp)
+  local function media(path)
+    if pool[path] then return pool[path] end
+    assert(allowed_media(path), "not in the Media Pool and not in the resolve-assist folders: " .. path)
+    local got = mp:ImportMedia({ path })
+    assert(got and got[1], "could not import " .. path)
+    pool[path] = got[1]
+    return got[1]
+  end
+  -- unique timeline name
+  local tname = title .. " " .. COPY_TAG
+  local taken = {}
+  for i = 1, p:GetTimelineCount() do taken[p:GetTimelineByIndex(i):GetName()] = true end
+  local n = 2
+  while taken[tname] do tname = title .. " " .. n .. " " .. COPY_TAG; n = n + 1 end
+  local tl = mp:CreateEmptyTimeline(tname)
+  assert(tl, "could not create the timeline")
+  p:SetCurrentTimeline(tl)
+  local infos = {}
+  for _, sg in ipairs(segs) do
+    assert(sg.a and sg.b and sg.b > sg.a, "bad segment times for " .. tostring(sg.path))
+    local it = media(sg.path)
+    local fps = tonumber(it:GetClipProperty("FPS")) or fps_of(tl)
+    infos[#infos + 1] = { mediaPoolItem = it, startFrame = math.floor(sg.a * fps + 0.5),
+                          endFrame = math.floor(sg.b * fps + 0.5) - 1, mediaType = 1 }
+  end
+  local placed = mp:AppendToTimeline(infos)
+  assert(placed and #placed > 0, "Resolve did not place the clips")
+  local t0, t1 = tl:GetStartFrame(), tl:GetEndFrame()
+  local tfps = fps_of(tl)
+  local report = { timeline = tname, segments = #placed, frames = t1 - t0, fps = tfps }
+  if music then
+    local m = media(music)
+    local frames = tonumber(m:GetClipProperty("Frames") or "") or (t1 - t0)
+    local ok = mp:AppendToTimeline({ { mediaPoolItem = m, startFrame = 0, endFrame = math.min(t1 - t0, frames) - 1,
+                                       mediaType = 2, trackIndex = 1, recordFrame = t0 } })
+    report.music = ok and #ok > 0
+  end
+  if #sfx > 0 then
+    if tl:GetTrackCount("audio") < 2 then tl:AddTrack("audio", "stereo") end
+    local placed_sfx = 0
+    for _, e in ipairs(sfx) do
+      local it = media(e.path)
+      local frames = tonumber(it:GetClipProperty("Frames") or "") or math.floor(tfps)
+      local rec = t0 + math.max(0, math.floor(e.at * tfps + 0.5))
+      local ok = mp:AppendToTimeline({ { mediaPoolItem = it, startFrame = 0, endFrame = frames - 1, mediaType = 2,
+                                         trackIndex = 2, recordFrame = rec } })
+      if ok and #ok > 0 then placed_sfx = placed_sfx + 1 end
+    end
+    report.sfx = placed_sfx
+  end
+  local mk = 0
+  for _, m in ipairs(markers) do
+    if m.at and tl:AddMarker(math.floor(m.at * tfps + 0.5), "Blue", m.label, "resolve-assist", 1) then mk = mk + 1 end
+  end
+  report.markers = mk
+  return report
 end
 
 function OPS.undo(req)

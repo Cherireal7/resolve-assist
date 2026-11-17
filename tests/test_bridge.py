@@ -130,6 +130,7 @@ local function make_timeline(name)
   t.SetCurrentTimecode = function(self, v) tc = v; return true end
   t.GetCurrentTimecode = function() return tc end
   t.GetStartFrame = function() return 86400 end
+  t.AddMarker = function(self, f, color, label) RECORD("Marker", self.name, tostring(f), label, 0); return true end
   t.GetEndFrame = function() return 86700 end
   t.DuplicateTimeline = function(self, n) return make_timeline(n) end
   t.InsertFusionTitleIntoTimeline = function(self, kind)
@@ -146,12 +147,20 @@ end
 local timelines = { make_timeline("Timeline 1") }
 local current = timelines[1]
 local function folder(name)
-  local f = { name = name, subs = {} }
+  local f = { name = name, subs = {}, clips = {} }
   f.GetName = function(self) return self.name end
   f.GetSubFolderList = function(self) return self.subs end
+  f.GetClipList = function(self) return self.clips end
   return f
 end
+local function pool_clip(path, fps, frames)
+  return { path = path, GetName = function() return path:match("[^/]+$") end,
+           GetClipProperty = function(_, k)
+             if k == "File Path" then return path elseif k == "FPS" then return fps elseif k == "Frames" then return frames end
+           end }
+end
 local root_folder = folder("Master")
+root_folder.clips = { pool_clip("/Users/x/Downloads/a.mp4", "25", "500") }
 local current_folder = root_folder
 local media_pool = {
   GetRootFolder = function() return root_folder end,
@@ -162,8 +171,9 @@ local media_pool = {
     local out = {}
     for _, p in ipairs(paths) do
       RECORD("ImportMedia", current_folder.name, "", p, #paths)
-      out[#out + 1] = { is_srt = p:match("%.srt$") ~= nil, GetName = function() return p:match("[^/]+$") end,
-                        GetClipProperty = function(_, k) if k == "Frames" then return "200" end end }
+      local c = pool_clip(p, "25", "200")
+      c.is_srt = p:match("%.srt$") ~= nil
+      out[#out + 1] = c
     end
     return out
   end,
@@ -174,9 +184,25 @@ local media_pool = {
     end
     return true
   end,
+  CreateEmptyTimeline = function(self, name)
+    local t = make_timeline(name); timelines[#timelines + 1] = t; current = t
+    RECORD("CreateTimeline", name, "", "", 0)
+    return t
+  end,
   AppendToTimeline = function(self, infos)
     local i = infos[1]
     if i.mediaPoolItem and i.mediaPoolItem.is_srt then current.tracks.subtitle = 1; return { {} } end
+    if #infos > 1 or (i.mediaType == 1) then
+      local out = {}
+      for _, x in ipairs(infos) do
+        RECORD("AppendSeg", x.mediaPoolItem.path or "?", tostring(x.startFrame), tostring(x.endFrame), x.mediaType)
+        out[#out + 1] = {}
+      end
+      return out
+    end
+    if i.trackIndex then
+      RECORD("AppendAudio", (i.mediaPoolItem.path or "?"):match("[^/]+$"), tostring(i.trackIndex), tostring(i.recordFrame), i.mediaType)
+    end
     RECORD("AppendToTimeline", current.name, tostring(i.trackIndex), tostring(i.endFrame), i.mediaType)
     return { {} }
   end,
@@ -321,7 +347,7 @@ class BridgeEndToEnd(unittest.TestCase):
         self.assertEqual(res["timeline"]["timeline"], "Timeline 1 (resolve-assist)")
         self.assertTrue(res["timeline"]["created"])
         imported = [c for c in self.calls() if c["op"] == "ImportMedia"][0]
-        self.assertEqual(imported["value"], str(media / "song.wav"))
+        self.assertEqual(imported["value"], str((media / "song.wav").resolve()))
         placed = [c for c in self.calls() if c["op"] == "AppendToTimeline"][0]
         self.assertEqual(placed["clip"], "Timeline 1 (resolve-assist)")
         self.assertEqual((placed["version"], placed["value"], placed["node"]), ("2", "199", 2))  # audio track 2
@@ -359,12 +385,12 @@ class BridgeEndToEnd(unittest.TestCase):
         self.assertEqual(res["imported"], ["whoosh-medium.wav"])
         imp = [c for c in self.calls() if c["op"] == "ImportMedia"][-1]
         self.assertEqual(imp["clip"], "resolve-assist library")             # into the bin
-        self.assertEqual(imp["value"], str(lib / "sfx" / "whoosh-medium.wav"))
+        self.assertEqual(imp["value"], str((lib / "sfx" / "whoosh-medium.wav").resolve()))
         api.import_assets(["sfx/whoosh-medium.wav"])                        # reuses the bin
         g = api.apply_powergrade("film.drx", "1:2")
         self.assertTrue(g["ok"])
         drx = [c for c in self.calls() if c["op"] == "ApplyDRX"][-1]
-        self.assertEqual((drx["version"], drx["value"]), ("resolve-assist", str(lib / "powergrades" / "film.drx")))
+        self.assertEqual((drx["version"], drx["value"]), ("resolve-assist", str((lib / "powergrades" / "film.drx").resolve())))
         with self.assertRaises(ValueError):
             api.import_assets(["../../.ssh/id_rsa"])
         with self.assertRaises(BridgeError):
@@ -397,6 +423,32 @@ class BridgeEndToEnd(unittest.TestCase):
         self.assertTrue(res["added_track"])
         with self.assertRaises(BridgeError):
             Bridge().call("import_subtitles", file="../x.srt")
+
+    def test_build_edit_new_timeline_with_music_sfx_markers(self):
+        lib = self.env.root / "out" / "library"
+        (lib / "sfx").mkdir(parents=True)
+        (lib / "music").mkdir()
+        (lib / "sfx" / "whoosh-medium.wav").write_bytes(b"RIFF")
+        (lib / "music" / "calm-lofi-30s.wav").write_bytes(b"RIFF")
+        (lib / "manifest.json").write_text('{"items": [{"id": "whoosh-medium", "category": "sfx", "file": "sfx/whoosh-medium.wav",'
+                                           ' "tags": [], "usage": "", "license": ""}, {"id": "calm-lofi-30s", "category": "music",'
+                                           ' "file": "music/calm-lofi-30s.wav", "tags": [], "usage": "", "license": ""}]}')
+        segs = [{"source": "/Users/x/Downloads/a.mp4", "source_in": 1.0, "source_out": 2.0},
+                {"source": "/Users/x/Downloads/a.mp4", "source_in": 5.0, "source_out": 5.5}]
+        res = api.build_edit(segs, title="Nails", music="calm-lofi-30s", sfx_on_cuts="whoosh-medium")
+        self.assertEqual(res["timeline"], "Nails (resolve-assist)")
+        seg_calls = [(c["version"], c["value"]) for c in self.calls() if c["op"] == "AppendSeg"]
+        self.assertEqual(seg_calls, [("25", "49"), ("125", "137")])   # 25 fps; out 5.5 s = frame 137.5 → last frame 137
+        audio = [(c["clip"], c["version"]) for c in self.calls() if c["op"] == "AppendAudio"]
+        self.assertIn(("calm-lofi-30s.wav", "1"), audio)                # music on A1
+        self.assertIn(("whoosh-medium.wav", "2"), audio)                # whoosh on A2
+        sfx_rec = [c["value"] for c in self.calls() if c["op"] == "AppendAudio" and c["clip"] == "whoosh-medium.wav"][0]
+        self.assertEqual(sfx_rec, str(86400 + round(0.6 * 25)))         # 0.4 s before the cut at 1.0 s
+        self.assertEqual([c["version"] for c in self.calls() if c["op"] == "Marker"], ["25"])
+        again = api.build_edit(segs[:1], title="Nails")
+        self.assertEqual(again["timeline"], "Nails 2 (resolve-assist)")  # never overwrites
+        with self.assertRaises(BridgeError):                               # not in pool, not allowed
+            api.build_edit([{"source": "/etc/hosts.mp4", "source_in": 0, "source_out": 1}])
 
     def test_stabilize(self):
         res = api.stabilize("current")

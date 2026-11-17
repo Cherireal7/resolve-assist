@@ -628,3 +628,79 @@ def captions_for_timeline(model: str = "base", language: str = "auto", max_chars
         result["copy"] = b.call("duplicate_timeline")
         result["resolve"] = b.call("import_subtitles", timeout=60, file=out.name)
     return result
+
+
+# --------------------------------------------------------------------------- workspace
+
+def doctor() -> dict:
+    from .workspace import doctor as _doctor
+    return _doctor()
+
+
+def init_workspace() -> dict:
+    from .workspace import init_workspace as _init
+    return _init()
+
+
+def new_project(name: str) -> dict:
+    from .workspace import new_project as _new
+    return _new(name)
+
+
+# --------------------------------------------------------------------------- Phase 5: assembly
+
+def _plan_line(*fields: Any) -> str:
+    text = [str(f) for f in fields]
+    for t in text:
+        if any(c in t for c in "\t\r\n\x00"):
+            raise ValueError("plan values may not contain tabs or newlines")
+    return "\t".join(text) + "\n"
+
+
+def build_edit(segments: list[dict], title: str = "Beat edit", music: str | None = None,
+               sfx_on_cuts: str | None = None, sfx_lead: float = 0.4) -> dict:
+    """Assemble segments [{source, source_in, source_out}] into a NEW '(resolve-assist)' timeline,
+    with optional music on A1, an SFX from the library on every cut (A2) and a marker per cut."""
+    from .bridge import bridge_dir
+    if not segments:
+        raise ValueError("no segments")
+    lines = [_plan_line("title", safe_name(title).replace(".", "")[:50] or "Beat edit")]
+    t = 0.0
+    cuts = []
+    for s in segments:
+        src = str(Path(s["source"]).expanduser().resolve())
+        a, b = float(s["source_in"]), float(s["source_out"])
+        if b <= a:
+            raise ValueError(f"segment out <= in for {src}")
+        lines.append(_plan_line("seg", src, f"{a:.3f}", f"{b:.3f}"))
+        t += b - a
+        cuts.append(t)
+    cuts = cuts[:-1]
+    if music:
+        mp = Path(music).expanduser()
+        if not mp.is_absolute():
+            mp = (Path(output_dir()) / "library" / _library_rel(music))
+        lines.append(_plan_line("music", str(mp.resolve())))
+    if sfx_on_cuts:
+        sfx_path = (output_dir() / "library" / _library_rel(sfx_on_cuts)).resolve()
+        for c in cuts:
+            lines.append(_plan_line("sfx", str(sfx_path), f"{max(0.0, c - sfx_lead):.3f}"))
+    for c in cuts:
+        lines.append(_plan_line("marker", f"{c:.3f}", "cut"))
+    name = f"edit-{int(time.time() * 1000)}.plan"
+    plans = bridge_dir() / "plans"
+    plans.mkdir(parents=True, exist_ok=True)
+    (plans / name).write_text("".join(lines), encoding="utf-8")
+    return _bridge().call("build_edit", timeout=180, file=name)
+
+
+def assemble_beat_edit(videos: list[str], music: str, beats_per_cut: int = 2, order: str = "match",
+                       max_seconds: float | None = None, sfx_on_cuts: str | None = "whoosh-medium",
+                       title: str = "Beat edit") -> dict:
+    """Plan (beats + match cuts) and build it in Resolve in one go."""
+    plan = beat_edit_plan(videos, music, beats_per_cut, order, max_seconds)
+    segs = [{"source": s["source"], "source_in": s["source_in"], "source_out": s["source_out"]}
+            for s in plan["segments"]]
+    music_path = str(Path(music).expanduser().resolve())
+    built = build_edit(segs, title=title, music=music_path, sfx_on_cuts=sfx_on_cuts)
+    return {"plan": plan, "resolve": built}
