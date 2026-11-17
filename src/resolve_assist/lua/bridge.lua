@@ -1,5 +1,5 @@
 --[[
-resolve-assist bridge (Phase 2), protocol 5
+resolve-assist bridge (Phase 2), protocol 6
 
 Runs inside DaVinci Resolve (Free or Studio). Started by the loader that
 `resolve-assist bridge-install` puts on your clipboard, or from the Scripts menu
@@ -19,7 +19,7 @@ Security:
 local BRIDGE_DIR = BRIDGE_DIR_OVERRIDE or {{BRIDGE_DIR}}
 local LUT_DIR = LUT_DIR_OVERRIDE or {{LUT_DIR}}
 local MEDIA_DIR = MEDIA_DIR_OVERRIDE or {{MEDIA_DIR}}
-local PROTOCOL = 5
+local PROTOCOL = 6
 local POLL_SECONDS = BRIDGE_POLL_SECONDS or 0.1
 local MAX_LOOPS = BRIDGE_MAX_LOOPS          -- tests only; nil = run until stopped
 local MAX_AGE = 60                          -- seconds a request stays valid
@@ -371,7 +371,8 @@ function OPS.add_title(req)
     local mg = comp:FindTool("RA_TitleMerge")
     if not mg then
       mg = comp:AddTool("Merge", -32768, -32768); mg:SetAttrs({ TOOLS_Name = "RA_TitleMerge" })
-      local upstream = mo.Input:GetConnectedOutput()
+      local main = (mo.FindMainInput and mo:FindMainInput(1)) or mo.Input
+      local upstream = main and main:GetConnectedOutput()
       if upstream then mg:ConnectInput("Background", upstream) end
       mg:ConnectInput("Foreground", txt)
       mo:ConnectInput("Input", mg)
@@ -380,25 +381,43 @@ function OPS.add_title(req)
     txt:SetInput("Size", 0.05)
     txt:SetInput("Center", { 0.5, 0.86 })
   end)
-  local timed = false
+  -- Timing: keyframes are relative to the comp's RenderStart (GlobalStart can be the source timecode).
+  local timed, attrs = false, {}
+  pcall(function()
+    for _, k in ipairs({ "GlobalStart", "GlobalEnd", "RenderStart", "RenderEnd" }) do
+      attrs[k] = comp:GetAttrs("COMPN_" .. k)
+    end
+  end)
   if ok then
-    timed = pcall(function()
-      local mg = comp:FindTool("RA_TitleMerge")
-      local fps = fps_of(tl)
-      local gs = comp:GetAttrs().COMPN_GlobalStart or 0
-      local a = gs + math.floor(at * fps)
-      local b = a + math.floor(dur * fps)
-      local fade = math.max(1, math.floor(0.4 * fps))
-      mg.Blend = comp:BezierSpline({})
-      mg.Blend[math.max(gs, a - 1)] = 0
-      mg.Blend[a + fade] = 1
-      mg.Blend[b - fade] = 1
-      mg.Blend[b] = 0
-    end)
+    local mg = comp:FindTool("RA_TitleMerge")
+    local fps = fps_of(tl)
+    local clip_s = (it:GetEnd() - it:GetStart()) / fps
+    if at <= 0 and at + dur >= clip_s then
+      pcall(function() mg:ConnectInput("Blend", nil); mg:SetInput("Blend", 1) end)  -- whole clip: no animation
+    else
+      timed = pcall(function()
+        local t0 = tonumber(attrs.RenderStart) or 0
+        local a = t0 + math.floor(at * fps)
+        local b = a + math.floor(dur * fps)
+        local fade = math.max(1, math.floor(0.4 * fps))
+        mg:ConnectInput("Blend", nil)
+        mg.Blend = comp:BezierSpline({})
+        mg.Blend[math.max(t0, a - 1)] = 0
+        mg.Blend[a + fade] = 1
+        mg.Blend[b - fade] = 1
+        mg.Blend[b] = 0
+      end)
+    end
   end
+  local tools = {}
+  pcall(function()
+    for _, t in pairs(comp:GetToolList(false) or {}) do tools[#tools + 1] = t.Name end
+    table.sort(tools)
+  end)
   comp:Unlock()
   assert(ok, "could not build the title: " .. tostring(err))
-  return { ok = true, text = text, at = at, duration = dur, timed = timed, clip = info(it), timeline = tl:GetName() }
+  return { ok = true, text = text, at = at, duration = dur, timed = timed, clip = info(it), timeline = tl:GetName(),
+           comp = { attrs = attrs, tools = tools, count = it:GetFusionCompCount() } }
 end
 
 -- Delete a timeline copy made by resolve-assist (never the original) and go back to the original.

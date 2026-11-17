@@ -60,10 +60,12 @@ local function make_comp(owner)
     t.SetInput = function(self, k, v) self.inputs[k] = v; if k == "StyledText" then RECORD("SetInput", owner, k, v, 0) end end
     t.ConnectInput = function(self, k, src)
       self.inputs[k] = src
+      if src == nil then return true end  -- disconnect
       local from = (src.tool and src.tool.Name) or src.Name or "?"
       RECORD("Connect", owner, self.Name .. "." .. k, from, 0)
     end
     t.Output = { tool = t }
+    t.FindMainInput = function(self, i) return self.Input end
     t.Input = { GetConnectedOutput = function() local i = t.inputs.Input; return i and (i.Output or i) end }
     tools[name] = t
     return t
@@ -75,7 +77,12 @@ local function make_comp(owner)
   comp.AddTool = function(self, id) return tool(id .. "1", id) end
   comp.Lock = function() end
   comp.Unlock = function() end
-  comp.GetAttrs = function() return { COMPN_GlobalStart = 0 } end
+  comp.GetAttrs = function(self, key)
+    local a = { COMPN_GlobalStart = 216000, COMPN_GlobalEnd = 216372, COMPN_RenderStart = 0, COMPN_RenderEnd = 372 }
+    if key then return a[key] end
+    return a
+  end
+  comp.GetToolList = function() local out = {}; for _, t in pairs(tools) do out[#out + 1] = t end; return out end
   comp.BezierSpline = function() return {} end
   return comp
 end
@@ -307,6 +314,8 @@ class BridgeEndToEnd(unittest.TestCase):
         wires = {c["version"]: c["value"] for c in self.calls() if c["op"] == "Connect"}
         self.assertEqual(wires, {"RA_TitleMerge.Background": "MediaIn1", "RA_TitleMerge.Foreground": "RA_Title",
                                  "MediaOut1.Input": "RA_TitleMerge"})
+        self.assertEqual(t["title"]["comp"]["attrs"]["RenderStart"], 0)
+        self.assertIn("RA_Title", t["title"]["comp"]["tools"])
         api.add_title("Changed", at_seconds=0.5)                      # second call edits, no new nodes
         self.assertEqual(len([c for c in self.calls() if c["op"] == "Connect"]), 3)
         reset = api.reset_copy()
