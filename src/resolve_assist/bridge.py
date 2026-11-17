@@ -24,13 +24,13 @@ from typing import Any
 
 from .paths import output_dir
 
-PROTOCOL = 4
+PROTOCOL = 5
 HEARTBEAT_STALE_S = 10.0
 ALLOWED_OPS = {"status", "list_clips", "clip_info", "goto_clip", "grab_frame",
                "apply_cdl", "apply_lut", "stabilize", "undo", "stop",
-               "duplicate_timeline", "add_music", "add_title"}
+               "duplicate_timeline", "add_music", "add_title", "reset_copy"}
 ALLOWED_PARAMS = {"target", "node", "slope", "offset", "power", "saturation", "lut", "version",
-                  "file", "text", "at"}
+                  "file", "text", "at", "duration"}
 _VALUE_RE = re.compile(r"^[^\t\r\n\x00]{0,512}$")
 _TARGET_RE = re.compile(r"^(current|\d{1,3}:\d{1,4})$")
 

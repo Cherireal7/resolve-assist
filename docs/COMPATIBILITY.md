@@ -67,3 +67,5 @@ Implications for Phase 2:
 | apply_lut with a LUT in ~/Documents | ❌ SetLUT returned false (Resolve loads LUTs only from its LUT folders) → protocol 2 copies into LUT folders |
 | apply_lut, protocol 2 (copy into LUT folders) | ❌ container LUT folders don't exist (no mkdir in Lua); Fusion LUTs folder copy works but SetLUT refuses → **CDL approximation fallback used** ✅ |
 | stabilize (TimelineItem:Stabilize) | ✅ works on Free, ~6 s for a 6 s clip |
+| add_music (ImportMedia + AppendToTimeline, audio track 2) | ✅ on the timeline copy |
+| add_title via Timeline:InsertFusionTitleIntoTimeline | ⚠️ fails with V1 locked; unlocked it does an **insert edit on V1** and splits the clip → replaced (protocol 5) by a Text+ composited inside the clip with Fusion |

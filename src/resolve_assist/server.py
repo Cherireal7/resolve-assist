@@ -144,9 +144,16 @@ def add_music(file: str) -> str:
 
 
 @mcp.tool()
-def add_title(text: str, at_seconds: float = 0.0) -> str:
-    """Add a Text+ title at a time (seconds from the start) on the timeline copy. '|' = new line."""
-    return _run(api.add_title, text=text, at_seconds=at_seconds)
+def add_title(text: str, at_seconds: float = 0.0, duration: float = 5.0, target: str = "1:1") -> str:
+    """Add a Text+ title over a clip on the timeline copy (Fusion, inside the clip: the edit never
+    changes), fading in at at_seconds for duration seconds. '|' = new line."""
+    return _run(api.add_title, text=text, at_seconds=at_seconds, duration=duration, target=target)
+
+
+@mcp.tool()
+def reset_timeline_copy() -> str:
+    """Delete the '(resolve-assist)' timeline copy and reopen the original (never deletes originals)."""
+    return _run(api.reset_copy)
 
 
 @mcp.tool()

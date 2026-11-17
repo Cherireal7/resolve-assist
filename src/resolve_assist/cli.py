@@ -81,6 +81,9 @@ def main(argv: list[str] | None = None) -> int:
     ti = sub.add_parser("title", help="add a Text+ title (on a timeline copy); | = new line")
     ti.add_argument("text")
     ti.add_argument("--at", type=float, default=0.0, help="seconds from the start")
+    ti.add_argument("--duration", type=float, default=5.0)
+    ti.add_argument("--target", default="1:1")
+    sub.add_parser("reset-copy", help="delete the resolve-assist timeline copy (never the original)")
     un = sub.add_parser("undo", help="restore the clip's previous grade version")
     un.add_argument("target", nargs="?", default="current")
     sub.add_parser("serve", help="run the MCP server (stdio)")
@@ -130,7 +133,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "music":
             _print(api.add_music(args.file))
         elif args.cmd == "title":
-            _print(api.add_title(args.text, args.at))
+            _print(api.add_title(args.text, args.at, args.duration, args.target))
+        elif args.cmd == "reset-copy":
+            _print(api.reset_copy())
         elif args.cmd == "undo":
             _print(api.undo_grade(args.target))
         elif args.cmd == "serve":

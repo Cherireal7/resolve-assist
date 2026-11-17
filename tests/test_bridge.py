@@ -49,6 +49,37 @@ bmd = {
   fileexists = function(p) local f = _io.open(p, "r"); if f then f:close(); return true end; return false end,
 }
 
+local function make_comp(owner)
+  local tools = {}
+  local comp = {}
+  local function tool(name, id)
+    local t = { Name = name, id = id, inputs = {} }
+    t.SetAttrs = function(self, a)
+      if a.TOOLS_Name then tools[self.Name] = nil; self.Name = a.TOOLS_Name; tools[self.Name] = self end
+    end
+    t.SetInput = function(self, k, v) self.inputs[k] = v; if k == "StyledText" then RECORD("SetInput", owner, k, v, 0) end end
+    t.ConnectInput = function(self, k, src)
+      self.inputs[k] = src
+      local from = (src.tool and src.tool.Name) or src.Name or "?"
+      RECORD("Connect", owner, self.Name .. "." .. k, from, 0)
+    end
+    t.Output = { tool = t }
+    t.Input = { GetConnectedOutput = function() local i = t.inputs.Input; return i and (i.Output or i) end }
+    tools[name] = t
+    return t
+  end
+  tool("MediaIn1", "MediaIn")
+  local mo = tool("MediaOut1", "MediaOut")
+  mo.inputs.Input = tools.MediaIn1
+  comp.FindTool = function(self, n) return tools[n] end
+  comp.AddTool = function(self, id) return tool(id .. "1", id) end
+  comp.Lock = function() end
+  comp.Unlock = function() end
+  comp.GetAttrs = function() return { COMPN_GlobalStart = 0 } end
+  comp.BezierSpline = function() return {} end
+  return comp
+end
+
 local function clip(name, s, e)
   local c = { name = name, s = s, e = e, version = "Version 1", versions = { ["Version 1"] = true }, lut = "" }
   c.GetName = function(self) return self.name end
@@ -70,6 +101,10 @@ local function clip(name, s, e)
   c.SetLUT = graph.SetLUT
   c.GetLUT = graph.GetLUT
   c.Stabilize = function(self) RECORD("Stabilize", self.name, self.version, "", 0); return true end
+  c.comps = {}
+  c.GetFusionCompCount = function(self) return #self.comps end
+  c.GetFusionCompByIndex = function(self, i) return self.comps[i] end
+  c.AddFusionComp = function(self) local k = make_comp(self.name); self.comps[#self.comps + 1] = k; return k end
   return c
 end
 local clips = { clip("A.mp4", 86400, 86500), clip("B.mp4", 86500, 86700) }
@@ -105,6 +140,13 @@ local media_pool = {
   ImportMedia = function(self, paths)
     RECORD("ImportMedia", "", "", paths[1], 0)
     return { { GetClipProperty = function(_, k) if k == "Frames" then return "200" end end } }
+  end,
+  DeleteTimelines = function(self, list)
+    for _, t in ipairs(list) do
+      for i, x in ipairs(timelines) do if x == t then table.remove(timelines, i); break end end
+      RECORD("DeleteTimeline", t.name, "", "", 0)
+    end
+    return true
   end,
   AppendToTimeline = function(self, infos)
     local i = infos[1]
@@ -258,10 +300,19 @@ class BridgeEndToEnd(unittest.TestCase):
         self.assertEqual((placed["version"], placed["value"], placed["node"]), ("2", "199", 2))  # audio track 2
         t = api.add_title("Nail Art | Session", at_seconds=1.0)
         self.assertFalse(t["timeline"]["created"])                    # reuses the copy
-        ins = [c for c in self.calls() if c["op"] == "InsertTitle"][0]
-        self.assertEqual((ins["version"], ins["value"], ins["node"]), ("00:57:37:00", "Text+", 1))  # frame 86425 @25fps; V1 locked
+        self.assertTrue(t["title"]["timed"])
+        self.assertNotIn("InsertTitle", [c["op"] for c in self.calls()])  # never an insert edit
         text = [c for c in self.calls() if c["op"] == "SetInput"][0]
         self.assertEqual((text["version"], text["value"]), ("StyledText", "Nail Art \n Session"))
+        wires = {c["version"]: c["value"] for c in self.calls() if c["op"] == "Connect"}
+        self.assertEqual(wires, {"RA_TitleMerge.Background": "MediaIn1", "RA_TitleMerge.Foreground": "RA_Title",
+                                 "MediaOut1.Input": "RA_TitleMerge"})
+        api.add_title("Changed", at_seconds=0.5)                      # second call edits, no new nodes
+        self.assertEqual(len([c for c in self.calls() if c["op"] == "Connect"]), 3)
+        reset = api.reset_copy()
+        self.assertEqual(reset, {"deleted": True, "original": "Timeline 1"})
+        self.assertEqual([c["clip"] for c in self.calls() if c["op"] == "DeleteTimeline"], ["Timeline 1 (resolve-assist)"])
+        self.assertFalse(api.reset_copy()["deleted"])                 # original is never deleted
         with self.assertRaises(ValueError):
             api.add_music("../../secret.wav")
         with self.assertRaises(ValueError):

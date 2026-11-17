@@ -1,5 +1,5 @@
 --[[
-resolve-assist bridge (Phase 2), protocol 4
+resolve-assist bridge (Phase 2), protocol 5
 
 Runs inside DaVinci Resolve (Free or Studio). Started by the loader that
 `resolve-assist bridge-install` puts on your clipboard, or from the Scripts menu
@@ -19,7 +19,7 @@ Security:
 local BRIDGE_DIR = BRIDGE_DIR_OVERRIDE or {{BRIDGE_DIR}}
 local LUT_DIR = LUT_DIR_OVERRIDE or {{LUT_DIR}}
 local MEDIA_DIR = MEDIA_DIR_OVERRIDE or {{MEDIA_DIR}}
-local PROTOCOL = 4
+local PROTOCOL = 5
 local POLL_SECONDS = BRIDGE_POLL_SECONDS or 0.1
 local MAX_LOOPS = BRIDGE_MAX_LOOPS          -- tests only; nil = run until stopped
 local MAX_AGE = 60                          -- seconds a request stays valid
@@ -347,6 +347,9 @@ function OPS.add_music(req)
   return { ok = true, file = name, audio_track = track, frames = stop + 1, timeline = tl:GetName() }
 end
 
+-- Titles are composited INSIDE the clip with Fusion (Text+ over MediaIn), so the timeline
+-- structure never changes. (Timeline:InsertFusionTitleIntoTimeline did an insert edit on
+-- video track 1 in Free 21.2 and split the clip: not used.)
 function OPS.add_title(req)
   local tl = timeline()
   assert(is_copy(tl), "edits only happen on the resolve-assist copy of the timeline")
@@ -354,48 +357,64 @@ function OPS.add_title(req)
   assert(#text >= 1 and #text <= 200, "text must be 1..200 characters")
   local at = tonumber(req.at or "0")
   assert(at and at >= 0 and at < 36000, "at must be seconds from the start")
-  local fps = fps_of(tl)
-  local frame = tl:GetStartFrame() + math.floor(at * math.floor(fps + 0.5))
-  tl:SetCurrentTimecode(frames_to_tc(frame, fps))
-  -- Try the safest ways first and report every attempt (Resolve's title API differs per build).
-  local attempts = {}
-  local function count_v1()
-    local n = 0
-    for _ in pairs(tl:GetItemListInTrack("video", 1) or {}) do n = n + 1 end
-    return n
-  end
-  local function try(label, fn)
-    local ok, res = pcall(fn)
-    attempts[#attempts + 1] = label .. ": " .. (ok and (res and "ok" or "no item") or ("error " .. tostring(res)))
-    if ok and res then return res end
-  end
-  local v1_before = count_v1()
-  pcall(function() r:OpenPage("edit") end)
-  tl:SetCurrentTimecode(frames_to_tc(frame, fps))
-  if tl:GetTrackCount("video") < 2 then tl:AddTrack("video") end
-  local item = try("fusion Text+ (track 1 locked)", function()
-      tl:SetTrackLock("video", 1, true)
-      local ok, res = pcall(function() return tl:InsertFusionTitleIntoTimeline("Text+") end)
-      tl:SetTrackLock("video", 1, false)
-      if ok then return res end
-      error(res, 0)
-    end)
-    or try("fusion Text+", function() return tl:InsertFusionTitleIntoTimeline("Text+") end)
-    or try("title Text+", function() return tl:InsertTitleIntoTimeline("Text+") end)
-    or try("title Text", function() return tl:InsertTitleIntoTimeline("Text") end)
-  assert(item, "Resolve could not insert a title. Attempts: " .. table.concat(attempts, "; "))
-  local warning = nil
-  if count_v1() ~= v1_before then
-    warning = "the title landed on video track 1 (only in the timeline copy); move it up in the Edit page"
-  end
-  local text_set = false
-  pcall(function()
-    local comp = item:GetFusionCompByIndex(1)
-    local tool = comp and (comp:FindToolByID("TextPlus") or comp:FindTool("Template"))
-    if tool then tool:SetInput("StyledText", (text:gsub("|", "\n"))); text_set = true end
+  local dur = tonumber(req.duration or "5")
+  assert(dur and dur > 0 and dur <= 600, "duration must be 0..600 seconds")
+  local it = item_for((req.target and req.target ~= "") and req.target or "1:1")
+  local comp = (it:GetFusionCompCount() > 0) and it:GetFusionCompByIndex(1) or it:AddFusionComp()
+  assert(comp, "could not open the clip's Fusion composition")
+  local mo = comp:FindTool("MediaOut1")
+  assert(mo, "the clip's composition has no MediaOut1")
+  comp:Lock()
+  local ok, err = pcall(function()
+    local txt = comp:FindTool("RA_Title")
+    if not txt then txt = comp:AddTool("TextPlus", -32768, -32768); txt:SetAttrs({ TOOLS_Name = "RA_Title" }) end
+    local mg = comp:FindTool("RA_TitleMerge")
+    if not mg then
+      mg = comp:AddTool("Merge", -32768, -32768); mg:SetAttrs({ TOOLS_Name = "RA_TitleMerge" })
+      local upstream = mo.Input:GetConnectedOutput()
+      if upstream then mg:ConnectInput("Background", upstream) end
+      mg:ConnectInput("Foreground", txt)
+      mo:ConnectInput("Input", mg)
+    end
+    txt:SetInput("StyledText", (text:gsub("|", "\n")))
+    txt:SetInput("Size", 0.05)
+    txt:SetInput("Center", { 0.5, 0.86 })
   end)
-  return { ok = true, text = text, text_set = text_set, at = at, start = item:GetStart(), ["end"] = item:GetEnd(),
-           attempts = attempts, warning = warning, timeline = tl:GetName() }
+  local timed = false
+  if ok then
+    timed = pcall(function()
+      local mg = comp:FindTool("RA_TitleMerge")
+      local fps = fps_of(tl)
+      local gs = comp:GetAttrs().COMPN_GlobalStart or 0
+      local a = gs + math.floor(at * fps)
+      local b = a + math.floor(dur * fps)
+      local fade = math.max(1, math.floor(0.4 * fps))
+      mg.Blend = comp:BezierSpline({})
+      mg.Blend[math.max(gs, a - 1)] = 0
+      mg.Blend[a + fade] = 1
+      mg.Blend[b - fade] = 1
+      mg.Blend[b] = 0
+    end)
+  end
+  comp:Unlock()
+  assert(ok, "could not build the title: " .. tostring(err))
+  return { ok = true, text = text, at = at, duration = dur, timed = timed, clip = info(it), timeline = tl:GetName() }
+end
+
+-- Delete a timeline copy made by resolve-assist (never the original) and go back to the original.
+function OPS.reset_copy()
+  local p, tl = project(), timeline()
+  if not is_copy(tl) then return { deleted = false, reason = "current timeline is not a resolve-assist copy" } end
+  local original = tl:GetName():gsub(" %(resolve%-assist%)$", "")
+  local orig = nil
+  for i = 1, p:GetTimelineCount() do
+    local t = p:GetTimelineByIndex(i)
+    if t and t:GetName() == original then orig = t end
+  end
+  assert(orig, "original timeline '" .. original .. "' not found; the copy is kept")
+  assert(p:SetCurrentTimeline(orig), "could not open the original timeline")
+  local deleted = p:GetMediaPool():DeleteTimelines({ tl })
+  return { deleted = deleted and true or false, original = original }
 end
 
 function OPS.undo(req)
@@ -413,7 +432,7 @@ end
 
 -- ------------------------------------------------------------------ request loop
 local KEYS = { seq = 1, session = 1, ts = 1, op = 1, target = 1, node = 1, slope = 1, offset = 1,
-               power = 1, saturation = 1, lut = 1, version = 1, file = 1, text = 1, at = 1 }
+               power = 1, saturation = 1, lut = 1, version = 1, file = 1, text = 1, at = 1, duration = 1 }
 local REQUEST = BRIDGE_DIR .. "/request.txt"
 local RESPONSE = BRIDGE_DIR .. "/response.txt"
 local STATUS = BRIDGE_DIR .. "/status.txt"

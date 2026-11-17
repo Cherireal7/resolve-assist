@@ -415,13 +415,15 @@ def add_music(file: str) -> dict:
     return {"timeline": copy, "music": res}
 
 
-def add_title(text: str, at_seconds: float = 0.0) -> dict:
-    """Add a Text+ title at a time (seconds from the start) on the timeline copy. Use '|' for a new line."""
+def add_title(text: str, at_seconds: float = 0.0, duration: float = 5.0, target: str = "1:1") -> dict:
+    """Add a Text+ title over a clip (composited inside the clip with Fusion, so the edit never
+    changes) on the timeline copy, fading in at at_seconds for duration seconds. '|' = new line."""
     if not 1 <= len(text) <= 200 or any(c in text for c in "\t\r\n"):
         raise ValueError("text must be 1..200 characters on one line (use | for a line break)")
     b = _bridge()
     copy = b.call("duplicate_timeline")
-    res = b.call("add_title", timeout=60, text=text, at=f"{float(at_seconds):.3f}")
+    res = b.call("add_title", timeout=60, text=text, at=f"{float(at_seconds):.3f}",
+                 duration=f"{float(duration):.3f}", target=target)
     return {"timeline": copy, "title": res}
 
 
@@ -438,3 +440,8 @@ def make_music(preset: str = "calm-lofi", seconds: float | None = None) -> dict:
         except Exception:
             seconds = 30.0
     return generate(preset, float(seconds), media_dir() / f"{safe_name(preset)}-preset.wav")
+
+
+def reset_copy() -> dict:
+    """Delete the resolve-assist timeline copy (only a copy, never the original) and reopen the original."""
+    return _bridge().call("reset_copy", timeout=60)
