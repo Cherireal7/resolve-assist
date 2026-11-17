@@ -40,6 +40,18 @@ LOOKS: dict[str, Look] = {
              CDL.make(slope=1.03, saturation=1.12), contrast=0.15),
         Look("bw-contrast", "Black & white with a rich contrast curve",
              CDL.make(saturation=0.0), contrast=0.35),
+        Look("golden-hour", "Late-afternoon sun: warm highlights, soft contrast, glowing skin",
+             CDL.make(slope=(1.08, 1.0, 0.86), offset=(0.01, 0.0, -0.01), saturation=1.05),
+             contrast=0.15, highlight_tint=(0.03, 0.015, -0.02), black_lift=0.015),
+        Look("vintage-fade", "Faded 70s print: milky blacks, muted greens, warm cast",
+             CDL.make(slope=(1.03, 0.97, 0.9), power=(1.0, 1.04, 1.08), saturation=0.75),
+             contrast=0.1, shadow_tint=(0.02, 0.0, 0.03), black_lift=0.07),
+        Look("moody-teal", "Dark, moody teal shadows with desaturated mids (travel/fashion)",
+             CDL.make(slope=0.95, offset=-0.015, saturation=0.8),
+             contrast=0.35, shadow_tint=(-0.04, 0.02, 0.04), highlight_tint=(0.015, 0.0, -0.01)),
+        Look("pastel-dream", "Bright, airy pastel look: lifted shadows, soft saturation (beauty/lifestyle)",
+             CDL.make(slope=1.06, offset=0.02, saturation=0.85),
+             contrast=0.0, highlight_tint=(0.01, 0.0, 0.015), black_lift=0.06),
     )
 }
 

@@ -21,6 +21,10 @@ PRESETS: dict[str, dict] = {
                   "beat": True, "brightness": 0.35, "description": "Warm, relaxed lo-fi pads with a soft beat"},
     "bright-pop": {"bpm": 112, "chords": [[60, 64, 67, 72], [55, 59, 62, 67], [57, 60, 64, 69], [53, 57, 60, 65]],
                    "beat": True, "brightness": 0.6, "description": "Upbeat, cheerful pop chords for promos"},
+    "house-groove": {"bpm": 124, "chords": [[57, 60, 64, 67], [53, 57, 60, 64], [55, 59, 62, 65], [52, 55, 59, 64]],
+                     "beat": True, "four": True, "brightness": 0.5, "description": "Four-on-the-floor house groove, energetic"},
+    "cinematic-pulse": {"bpm": 70, "chords": [[45, 52, 57, 60], [41, 48, 53, 57], [43, 50, 55, 58], [40, 47, 52, 55]],
+                        "beat": True, "four": True, "brightness": 0.15, "description": "Dark, slow cinematic pulse for trailers/reveals"},
     "ambient": {"bpm": 60, "chords": [[48, 55, 60, 64], [45, 52, 57, 60], [41, 48, 53, 57], [43, 50, 55, 59]],
                 "beat": False, "brightness": 0.2, "description": "Slow, airy pads without drums"},
 }
@@ -68,9 +72,10 @@ def generate(preset: str, seconds: float, path: Path, seed: int = 3, volume: flo
         drums = 0.0
         if cfg["beat"]:
             beat_idx = int(t / beat_s) % 4
-            if beat_idx in (0, 2):  # kick: falling sine
+            kick = cfg.get("four") or beat_idx in (0, 2)
+            if kick:                # kick: falling sine (every beat for four-on-the-floor)
                 drums += math.sin(two_pi * (50 + 90 * math.exp(-tbeat * 30)) * tbeat) * math.exp(-tbeat * 9) * 0.35
-            else:                   # soft snare: noise burst
+            if beat_idx in (1, 3):  # soft snare/clap: noise burst
                 drums += (rnd.random() * 2 - 1) * math.exp(-tbeat * 18) * 0.10
             th = t % (beat_s / 2)   # hi-hat on eighths
             drums += (rnd.random() * 2 - 1) * math.exp(-th * 60) * 0.035

@@ -135,3 +135,40 @@ class PlanTests(unittest.TestCase):
             plan_cuts([("a", shots)], [1.0], [], 5.0)
         with self.assertRaises(ValueError):
             plan_cuts([("a", shots)], [0.5, 1.0], [], 5.0, beats_per_cut=0)
+
+
+class LibraryTests(unittest.TestCase):
+    def test_sfx_recipes_render_valid_wavs(self):
+        import wave
+        from resolve_assist.library import sfx
+        with tempfile.TemporaryDirectory() as d:
+            for name in ("swoosh-fast", "pop-bubble", "hit-punch"):
+                fn, kw, _tags, _usage = sfx.RECIPES[name]
+                p = Path(d) / f"{name}.wav"
+                secs = sfx.write_wav(p, fn(**kw))
+                with wave.open(str(p)) as w:
+                    self.assertEqual((w.getnchannels(), w.getframerate()), (2, 48000))
+                    self.assertAlmostEqual(w.getnframes() / 48000, secs, places=2)
+
+    def test_search_ranks_by_words(self):
+        import json, os
+        from resolve_assist.library.build import search
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["RESOLVE_ASSIST_OUTPUT"] = d
+            try:
+                (Path(d) / "library").mkdir()
+                items = [{"id": "whoosh-medium", "category": "sfx", "file": "sfx/w.wav", "tags": ["whoosh", "transition"], "usage": "cut"},
+                         {"id": "flash-white", "category": "transitions", "file": "t/f.mp4", "tags": ["flash", "transition"], "usage": "cut"},
+                         {"id": "gradient-ocean-9x16", "category": "backgrounds", "file": "b/o.png", "tags": ["vertical"], "usage": "cards"}]
+                (Path(d) / "library" / "manifest.json").write_text(json.dumps({"items": items}))
+                self.assertEqual(search("whoosh transition")[0]["id"], "whoosh-medium")
+                self.assertEqual([i["id"] for i in search("transition", category="transitions")], ["flash-white"])
+                self.assertEqual(search("nothing-matches"), [])
+            finally:
+                os.environ.pop("RESOLVE_ASSIST_OUTPUT", None)
+
+    def test_png_alpha_roundtrip(self):
+        from resolve_assist.imaging.png import decode_png, encode_png
+        data = encode_png(2, 1, [(1.0, 0.0, 0.0, 0.5), (0.0, 1.0, 0.0, 1.0)])
+        img = decode_png(data)
+        self.assertAlmostEqual(img.pixels[0][0], 1.0)

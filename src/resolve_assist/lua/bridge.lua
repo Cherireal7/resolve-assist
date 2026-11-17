@@ -1,5 +1,5 @@
 --[[
-resolve-assist bridge (Phase 2), protocol 6
+resolve-assist bridge (Phase 2), protocol 7
 
 Runs inside DaVinci Resolve (Free or Studio). Started by the loader that
 `resolve-assist bridge-install` puts on your clipboard, or from the Scripts menu
@@ -19,7 +19,8 @@ Security:
 local BRIDGE_DIR = BRIDGE_DIR_OVERRIDE or {{BRIDGE_DIR}}
 local LUT_DIR = LUT_DIR_OVERRIDE or {{LUT_DIR}}
 local MEDIA_DIR = MEDIA_DIR_OVERRIDE or {{MEDIA_DIR}}
-local PROTOCOL = 6
+local LIBRARY_DIR = LIBRARY_DIR_OVERRIDE or {{LIBRARY_DIR}}
+local PROTOCOL = 7
 local POLL_SECONDS = BRIDGE_POLL_SECONDS or 0.1
 local MAX_LOOPS = BRIDGE_MAX_LOOPS          -- tests only; nil = run until stopped
 local MAX_AGE = 60                          -- seconds a request stays valid
@@ -436,6 +437,50 @@ function OPS.reset_copy()
   return { deleted = deleted and true or false, original = original }
 end
 
+
+-- ------------------------------------------------------------------ asset library
+local function library_path(rel)
+  assert(type(rel) == "string" and rel:match("^[%w][%w _%.%-/]*$") and not rel:find("..", 1, true)
+         and not rel:find("//", 1, true), "invalid library path: " .. tostring(rel))
+  local path = LIBRARY_DIR .. "/" .. rel
+  assert(not bmd.fileexists or bmd.fileexists(path), "not in the library: " .. rel)
+  return path
+end
+
+function OPS.import_media(req)
+  local files = {}
+  for rel in (req.files or ""):gmatch("[^|]+") do files[#files + 1] = library_path(rel) end
+  assert(#files >= 1 and #files <= 30, "give 1..30 library files")
+  local mp = project():GetMediaPool()
+  local root = mp:GetRootFolder()
+  local bin = nil
+  for _, f in ipairs(root:GetSubFolderList() or {}) do
+    if f:GetName() == "resolve-assist library" then bin = f end
+  end
+  bin = bin or mp:AddSubFolder(root, "resolve-assist library")
+  assert(bin, "could not create the Media Pool bin")
+  local before = mp:GetCurrentFolder()
+  mp:SetCurrentFolder(bin)
+  local items = mp:ImportMedia(files) or {}
+  if before then mp:SetCurrentFolder(before) end
+  local names = {}
+  for _, it in ipairs(items) do names[#names + 1] = it:GetName() end
+  return { ok = #names > 0, imported = names, bin = "resolve-assist library" }
+end
+
+function OPS.apply_drx(req)
+  local it = item_for(req.target)
+  local rel = req.file or ""
+  assert(rel:match("^powergrades/[%w][%w _%.%-]*%.drx$"), "PowerGrades must be .drx files in library/powergrades")
+  local path = library_path(rel)
+  local mode = tonumber(req.mode or "0") or 0
+  assert(mode >= 0 and mode <= 2, "mode must be 0 (no keyframes), 1 (source timecode) or 2 (start frames)")
+  local prev = ensure_ai_version(it)
+  local graph = it:GetNodeGraph()
+  local ok = graph and graph:ApplyGradeFromDRX(path, mode)
+  return { ok = ok and true or false, previous_version = prev, nodes = it:GetNumNodes(), clip = info(it, req.target) }
+end
+
 function OPS.undo(req)
   local it = item_for(req.target)
   local name = req.version or ""
@@ -451,7 +496,7 @@ end
 
 -- ------------------------------------------------------------------ request loop
 local KEYS = { seq = 1, session = 1, ts = 1, op = 1, target = 1, node = 1, slope = 1, offset = 1,
-               power = 1, saturation = 1, lut = 1, version = 1, file = 1, text = 1, at = 1, duration = 1 }
+               power = 1, saturation = 1, lut = 1, version = 1, file = 1, text = 1, at = 1, duration = 1, files = 1, mode = 1 }
 local REQUEST = BRIDGE_DIR .. "/request.txt"
 local RESPONSE = BRIDGE_DIR .. "/response.txt"
 local STATUS = BRIDGE_DIR .. "/status.txt"

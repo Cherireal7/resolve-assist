@@ -104,6 +104,7 @@ local function clip(name, s, e)
     return false
   end
   graph.GetLUT = function(g, node) return c.lut end
+  graph.ApplyGradeFromDRX = function(g, path, mode) RECORD("ApplyDRX", c.name, c.version, path, mode); return true end
   c.GetNodeGraph = function(self) return graph end
   c.SetLUT = graph.SetLUT
   c.GetLUT = graph.GetLUT
@@ -143,10 +144,27 @@ local function make_timeline(name)
 end
 local timelines = { make_timeline("Timeline 1") }
 local current = timelines[1]
+local function folder(name)
+  local f = { name = name, subs = {} }
+  f.GetName = function(self) return self.name end
+  f.GetSubFolderList = function(self) return self.subs end
+  return f
+end
+local root_folder = folder("Master")
+local current_folder = root_folder
 local media_pool = {
+  GetRootFolder = function() return root_folder end,
+  AddSubFolder = function(self, parent, name) local f = folder(name); table.insert(parent.subs, f); return f end,
+  GetCurrentFolder = function() return current_folder end,
+  SetCurrentFolder = function(self, f) current_folder = f; return true end,
   ImportMedia = function(self, paths)
-    RECORD("ImportMedia", "", "", paths[1], 0)
-    return { { GetClipProperty = function(_, k) if k == "Frames" then return "200" end end } }
+    local out = {}
+    for _, p in ipairs(paths) do
+      RECORD("ImportMedia", current_folder.name, "", p, #paths)
+      out[#out + 1] = { GetName = function() return p:match("[^/]+$") end,
+                        GetClipProperty = function(_, k) if k == "Frames" then return "200" end end }
+    end
+    return out
   end,
   DeleteTimelines = function(self, list)
     for _, t in ipairs(list) do
@@ -326,6 +344,31 @@ class BridgeEndToEnd(unittest.TestCase):
             api.add_music("../../secret.wav")
         with self.assertRaises(ValueError):
             api.add_title("two\nlines")
+
+    def test_import_assets_and_powergrade_from_library_only(self):
+        lib = self.env.root / "out" / "library"
+        (lib / "sfx").mkdir(parents=True)
+        (lib / "powergrades").mkdir()
+        (lib / "sfx" / "whoosh-medium.wav").write_bytes(b"RIFF")
+        (lib / "powergrades" / "film.drx").write_text("<drx/>")
+        (lib / "manifest.json").write_text('{"items": [{"id": "whoosh-medium", "category": "sfx", '
+                                           '"file": "sfx/whoosh-medium.wav", "tags": ["whoosh"], "usage": "x", "license": "x"}]}')
+        res = api.import_assets(["whoosh-medium"])
+        self.assertEqual(res["imported"], ["whoosh-medium.wav"])
+        imp = [c for c in self.calls() if c["op"] == "ImportMedia"][-1]
+        self.assertEqual(imp["clip"], "resolve-assist library")             # into the bin
+        self.assertEqual(imp["value"], str(lib / "sfx" / "whoosh-medium.wav"))
+        api.import_assets(["sfx/whoosh-medium.wav"])                        # reuses the bin
+        g = api.apply_powergrade("film.drx", "1:2")
+        self.assertTrue(g["ok"])
+        drx = [c for c in self.calls() if c["op"] == "ApplyDRX"][-1]
+        self.assertEqual((drx["version"], drx["value"]), ("resolve-assist", str(lib / "powergrades" / "film.drx")))
+        with self.assertRaises(ValueError):
+            api.import_assets(["../../.ssh/id_rsa"])
+        with self.assertRaises(BridgeError):
+            Bridge().call("import_media", files="../secret.wav")            # Lua-side check too
+        with self.assertRaises(BridgeError):
+            Bridge().call("apply_drx", file="sfx/whoosh-medium.wav")        # only powergrades/*.drx
 
     def test_stabilize(self):
         res = api.stabilize("current")

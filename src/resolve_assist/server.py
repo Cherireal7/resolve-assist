@@ -184,6 +184,34 @@ def beat_edit_plan(videos: list[str], music: str, beats_per_cut: int = 2, order:
                 order=order, max_seconds=max_seconds)
 
 
+@mcp.tool()
+def library_build(force: bool = False) -> str:
+    """Generate the royalty-free asset library (SFX, music beds, LUTs, overlays, backgrounds,
+    transition clips) in ~/Documents/resolve-assist/library. Existing files are kept unless force."""
+    return _run(api.library_build, force=force)
+
+
+@mcp.tool()
+def library_search(query: str = "", category: Optional[str] = None, limit: int = 20) -> str:
+    """Search the asset library by words. Categories: sfx, music, luts, overlays, backgrounds,
+    transitions. Each result says how to use it (e.g. Composite Mode: Screen)."""
+    return _run(api.library_search, query=query, category=category, limit=limit)
+
+
+@mcp.tool()
+def import_assets(names: list[str]) -> str:
+    """Import library assets (ids from library_search) into Resolve's Media Pool bin
+    'resolve-assist library'. Needs the bridge."""
+    return _run(api.import_assets, names=names)
+
+
+@mcp.tool()
+def apply_powergrade(file: str, target: str = "current", mode: int = 0) -> str:
+    """Apply a downloaded PowerGrade (.drx in library/powergrades) to a clip. Goes into the
+    'resolve-assist' grade version (undo_grade restores). mode 0 = ignore keyframes."""
+    return _run(api.apply_powergrade, file=file, target=target, mode=mode)
+
+
 def main() -> None:
     mcp.run()
 

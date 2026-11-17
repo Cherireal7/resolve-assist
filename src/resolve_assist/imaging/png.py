@@ -135,19 +135,24 @@ def decode_png(data: bytes, max_side: int = 512) -> Image:
     return Image(out_w, out_h, pixels, width, height)
 
 
-def encode_png(width: int, height: int, pixels: list[RGB], depth: int = 8) -> bytes:
-    """Minimal RGB encoder (filter 0). Used for previews and tests."""
+def encode_png(width: int, height: int, pixels: list, depth: int = 8) -> bytes:
+    """Minimal encoder (filter 0). RGB tuples, or RGBA tuples for transparency."""
     maxval = 255 if depth == 8 else 65535
+    channels = len(pixels[0]) if pixels else 3
+    if channels not in (3, 4):
+        raise ValueError("pixels must be RGB or RGBA tuples")
+    nbytes = depth // 8
     rows = bytearray()
     for y in range(height):
         rows.append(0)
-        for r, g, b in pixels[y * width:(y + 1) * width]:
-            for v in (r, g, b):
+        for px in pixels[y * width:(y + 1) * width]:
+            for v in px:
                 q = int(round(min(1.0, max(0.0, v)) * maxval))
-                rows.extend(q.to_bytes(depth // 8, "big"))
+                rows.extend(q.to_bytes(nbytes, "big"))
 
     def chunk(ctype: bytes, body: bytes) -> bytes:
         return struct.pack(">I", len(body)) + ctype + body + struct.pack(">I", zlib.crc32(ctype + body))
 
-    ihdr = struct.pack(">IIBBBBB", width, height, depth, 2, 0, 0, 0)
+    color_type = 6 if channels == 4 else 2
+    ihdr = struct.pack(">IIBBBBB", width, height, depth, color_type, 0, 0, 0)
     return PNG_SIGNATURE + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(bytes(rows), 6)) + chunk(b"IEND", b"")

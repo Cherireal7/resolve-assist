@@ -97,6 +97,16 @@ def main(argv: list[str] | None = None) -> int:
     bp.add_argument("--beats-per-cut", type=int, default=2)
     bp.add_argument("--order", choices=("match", "original"), default="match")
     bp.add_argument("--max-seconds", type=float)
+    lb = sub.add_parser("library", help="build the asset library")
+    lb.add_argument("--force", action="store_true")
+    ls = sub.add_parser("assets", help="search the asset library")
+    ls.add_argument("query", nargs="?", default="")
+    ls.add_argument("--category")
+    ia = sub.add_parser("import", help="import library assets into Resolve's Media Pool")
+    ia.add_argument("names", nargs="+")
+    pg = sub.add_parser("powergrade", help="apply a .drx from library/powergrades to a clip")
+    pg.add_argument("file")
+    pg.add_argument("target", nargs="?", default="current")
     sub.add_parser("serve", help="run the MCP server (stdio)")
 
     args = p.parse_args(argv)
@@ -155,6 +165,18 @@ def main(argv: list[str] | None = None) -> int:
             _print(api.analyze_music(args.path))
         elif args.cmd == "beat-plan":
             _print(api.beat_edit_plan(args.videos, args.music, args.beats_per_cut, args.order, args.max_seconds))
+        elif args.cmd == "library":
+            from .library.build import build_library
+            _print(build_library(force=args.force, log=lambda m: print(m, file=sys.stderr)))
+        elif args.cmd == "assets":
+            res = api.library_search(args.query, args.category)
+            for it in res["items"]:
+                print(f"{it['category']:12s} {it['id']:28s} {it['usage']}")
+            print(f"{res['count']} result(s) in {res['root']}")
+        elif args.cmd == "import":
+            _print(api.import_assets(args.names))
+        elif args.cmd == "powergrade":
+            _print(api.apply_powergrade(args.file, args.target))
         elif args.cmd == "serve":
             try:
                 from .server import main as serve

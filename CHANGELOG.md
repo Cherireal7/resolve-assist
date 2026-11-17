@@ -4,6 +4,16 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (asset library)
+- `library_build`: royalty-free assets generated locally into ~/Documents/resolve-assist/library:
+  16 SFX (whooshes, risers, impacts, hits, pops, glitch, shutter, ding, typing), 5 music beds
+  (incl. house and cinematic), 20 LUTs (10 looks × 100/50%), 17 overlays (light leaks, bokeh,
+  vignettes, grain, dust, letterbox, lower-third panel), 12 backgrounds (16:9 + 9:16), and with ffmpeg
+  transition clips (flashes, light-leak sweeps, film burn, glitch) + animated grain.
+- manifest.json with tags/usage/license, README with import steps and free sources.
+- `library_search`, `import_assets` (into a Media Pool bin), `apply_powergrade` (.drx). Bridge protocol 7.
+- 4 new looks: golden-hour, vintage-fade, moody-teal, pastel-dream. PNG encoder writes RGBA.
+
 ### Added (Phase 4: analysis engine)
 - Visual fingerprints (layout grid, edge orientation, dominant colors, brightness centroid, sharpness).
 - Shot detection with an adaptive per-shot threshold; best (sharpest) frame per shot; contact sheet PNG.

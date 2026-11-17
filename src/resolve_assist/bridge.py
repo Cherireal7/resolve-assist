@@ -24,14 +24,15 @@ from typing import Any
 
 from .paths import output_dir
 
-PROTOCOL = 6
+PROTOCOL = 7
 HEARTBEAT_STALE_S = 10.0
 ALLOWED_OPS = {"status", "list_clips", "clip_info", "goto_clip", "grab_frame",
                "apply_cdl", "apply_lut", "stabilize", "undo", "stop",
-               "duplicate_timeline", "add_music", "add_title", "reset_copy"}
+               "duplicate_timeline", "add_music", "add_title", "reset_copy",
+               "import_media", "apply_drx"}
 ALLOWED_PARAMS = {"target", "node", "slope", "offset", "power", "saturation", "lut", "version",
-                  "file", "text", "at", "duration"}
-_VALUE_RE = re.compile(r"^[^\t\r\n\x00]{0,512}$")
+                  "file", "text", "at", "duration", "files", "mode"}
+_VALUE_RE = re.compile(r"^[^\t\r\n\x00]{0,4096}$")
 _TARGET_RE = re.compile(r"^(current|\d{1,3}:\d{1,4})$")
 
 
@@ -83,7 +84,8 @@ def install(copy_to_clipboard: bool = True) -> dict:
     source = resources.files("resolve_assist").joinpath("lua/bridge.lua").read_text(encoding="utf-8")
     rendered = (source.replace("{{BRIDGE_DIR}}", _lua_string(str(root)))
                       .replace("{{LUT_DIR}}", _lua_string(str(lut_dir())))
-                      .replace("{{MEDIA_DIR}}", _lua_string(str(media_dir()))))
+                      .replace("{{MEDIA_DIR}}", _lua_string(str(media_dir())))
+                      .replace("{{LIBRARY_DIR}}", _lua_string(str(output_dir() / "library"))))
     bridge_file = root / "bridge.lua"
     bridge_file.write_text(rendered, encoding="utf-8")
     loader = loader_code(bridge_file)

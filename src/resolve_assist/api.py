@@ -530,3 +530,47 @@ def beat_edit_plan(videos: list[str], music: str, beats_per_cut: int = 2, order:
     plan = plan_cuts(shots_by_source, m["beats"], m["downbeats"], duration, beats_per_cut, order)
     plan["music"] = {"path": music, "bpm": m["bpm"], "confidence": m["confidence"], "duration": duration}
     return plan
+
+
+# --------------------------------------------------------------------------- asset library
+
+def library_build(force: bool = False) -> dict:
+    """Generate (or complete) the royalty-free asset library in ~/Documents/resolve-assist/library."""
+    from .library.build import build_library
+    return build_library(force=force)
+
+
+def library_search(query: str = "", category: str | None = None, limit: int = 20) -> dict:
+    """Find assets by words (e.g. 'whoosh', 'light leak warm', 'vertical background')."""
+    from .library.build import library_dir, search
+    hits = search(query, category, limit)
+    return {"root": str(library_dir()), "count": len(hits),
+            "items": [{**h, "path": str(library_dir() / h["file"])} for h in hits]}
+
+
+def _library_rel(name_or_file: str) -> str:
+    from .library.build import library_dir, load_manifest
+    for it in load_manifest().get("items", []):
+        if name_or_file in (it["id"], it["file"]):
+            return it["file"]
+    p = (library_dir() / name_or_file).resolve()
+    if p.parent != p and library_dir().resolve() in p.parents and p.is_file():
+        return str(p.relative_to(library_dir().resolve()))
+    raise ValueError(f"not in the library: {name_or_file} (try library_search)")
+
+
+def import_assets(names: list[str]) -> dict:
+    """Import library assets (ids or relative files) into the Media Pool bin 'resolve-assist library'."""
+    if not 1 <= len(names) <= 30:
+        raise ValueError("give 1..30 assets")
+    rels = [_library_rel(n) for n in names]
+    return _bridge().call("import_media", timeout=120, files="|".join(rels))
+
+
+def apply_powergrade(file: str, target: str = "current", mode: int = 0) -> dict:
+    """Apply a PowerGrade (.drx from library/powergrades) to a clip, in the resolve-assist grade version."""
+    rel = _library_rel(file if file.startswith("powergrades/") else f"powergrades/{Path(file).name}")
+    b = _bridge()
+    res = b.call("apply_drx", target=target, file=rel, mode=int(mode))
+    b.remember_previous(res.get("clip") or {}, res.get("previous_version"))
+    return res
