@@ -130,6 +130,26 @@ def stabilize_clip(target: str = "current") -> str:
 
 
 @mcp.tool()
+def make_music(preset: str = "calm-lofi", seconds: Optional[float] = None) -> str:
+    """Create royalty-free background music (presets: calm-lofi, bright-pop, ambient) in the media
+    folder, as long as the timeline by default. Then use add_music with the returned file name."""
+    return _run(api.make_music, preset=preset, seconds=seconds)
+
+
+@mcp.tool()
+def add_music(file: str) -> str:
+    """Place a music file (from ~/Documents/resolve-assist/media) under the video, trimmed to the
+    timeline. Works on a copy named '<timeline> (resolve-assist)'; the original stays untouched."""
+    return _run(api.add_music, file=file)
+
+
+@mcp.tool()
+def add_title(text: str, at_seconds: float = 0.0) -> str:
+    """Add a Text+ title at a time (seconds from the start) on the timeline copy. '|' = new line."""
+    return _run(api.add_title, text=text, at_seconds=at_seconds)
+
+
+@mcp.tool()
 def undo_grade(target: str = "current") -> str:
     """Restore the clip's grade version from before resolve-assist changed it."""
     return _run(api.undo_grade, target=target)

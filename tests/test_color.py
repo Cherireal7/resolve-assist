@@ -189,3 +189,17 @@ class LookCDLTests(unittest.TestCase):
             self.assertAlmostEqual(u, v, places=6)
         with self.assertRaises(ValueError):
             compose(CDL.make(power=1.2), b)
+
+
+class AudioTests(unittest.TestCase):
+    def test_preset_wav(self):
+        import tempfile, wave
+        from pathlib import Path
+        from resolve_assist.audio import generate
+        with tempfile.TemporaryDirectory() as tmp:
+            out = generate("calm-lofi", 2.0, Path(tmp) / "m.wav")
+            with wave.open(out["path"]) as w:
+                self.assertEqual((w.getnchannels(), w.getframerate()), (2, 44100))
+                self.assertAlmostEqual(w.getnframes() / 44100, 2.0, places=2)
+        with self.assertRaises(ValueError):
+            generate("nope", 2.0, Path("/tmp/x.wav"))

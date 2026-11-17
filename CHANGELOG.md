@@ -14,6 +14,9 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 - Bridge protocol 2: `stabilize` op; LUTs are copied by Lua into Resolve's own LUT folders when
   Resolve refuses to load them from Documents (live finding on Free 21.2 App Store).
+- Bridge protocol 3: `duplicate_timeline`, `add_music`, `add_title`. Edits only happen on a copy
+  named "<timeline> (resolve-assist)"; music only from ~/Documents/resolve-assist/media.
+- Royalty-free preset music generator (`make_music`: calm-lofi, bright-pop, ambient), stdlib only.
 - Fallback: if no LUT folder works, the look is approximated as CDL and folded into the correction.
 
 ### Fixed

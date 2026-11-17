@@ -65,3 +65,5 @@ Implications for Phase 2:
 | grab_frame (ExportCurrentFrameAsStill) | ✅ and the exported frame **includes the grade** (re-measured cast 3.4% → 1.9% after CDL) |
 | apply_cdl (SetCDL) in new version `resolve-assist` | ✅ AddVersion + LoadVersionByName work |
 | apply_lut with a LUT in ~/Documents | ❌ SetLUT returned false (Resolve loads LUTs only from its LUT folders) → protocol 2 copies into LUT folders |
+| apply_lut, protocol 2 (copy into LUT folders) | ❌ container LUT folders don't exist (no mkdir in Lua); Fusion LUTs folder copy works but SetLUT refuses → **CDL approximation fallback used** ✅ |
+| stabilize (TimelineItem:Stabilize) | ✅ works on Free, ~6 s for a 6 s clip |

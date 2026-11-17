@@ -73,6 +73,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--yes", action="store_true", help="really apply (otherwise only show the plan)")
     st = sub.add_parser("stabilize", help="run Resolve's stabilizer on a clip")
     st.add_argument("target", nargs="?", default="current")
+    mm = sub.add_parser("make-music", help="generate royalty-free preset music")
+    mm.add_argument("--preset", default="calm-lofi", choices=("calm-lofi", "bright-pop", "ambient"))
+    mm.add_argument("--seconds", type=float)
+    mu = sub.add_parser("music", help="add music from ~/Documents/resolve-assist/media (on a timeline copy)")
+    mu.add_argument("file")
+    ti = sub.add_parser("title", help="add a Text+ title (on a timeline copy); | = new line")
+    ti.add_argument("text")
+    ti.add_argument("--at", type=float, default=0.0, help="seconds from the start")
     un = sub.add_parser("undo", help="restore the clip's previous grade version")
     un.add_argument("target", nargs="?", default="current")
     sub.add_parser("serve", help="run the MCP server (stdio)")
@@ -117,6 +125,12 @@ def main(argv: list[str] | None = None) -> int:
                                    args.look, args.strength, args.node, confirm=args.yes))
         elif args.cmd == "stabilize":
             _print(api.stabilize(args.target))
+        elif args.cmd == "make-music":
+            _print(api.make_music(args.preset, args.seconds))
+        elif args.cmd == "music":
+            _print(api.add_music(args.file))
+        elif args.cmd == "title":
+            _print(api.add_title(args.text, args.at))
         elif args.cmd == "undo":
             _print(api.undo_grade(args.target))
         elif args.cmd == "serve":

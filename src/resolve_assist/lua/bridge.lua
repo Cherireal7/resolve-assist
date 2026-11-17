@@ -1,5 +1,5 @@
 --[[
-resolve-assist bridge (Phase 2), protocol 2
+resolve-assist bridge (Phase 2), protocol 3
 
 Runs inside DaVinci Resolve (Free or Studio). Started by the loader that
 `resolve-assist bridge-install` puts on your clipboard, or from the Scripts menu
@@ -10,14 +10,16 @@ no io library needed).
 Security:
 - Only the operations in OPS below can run. Request data is NEVER executed.
 - Requests must carry this run's session id and be fresh (MAX_AGE seconds).
-- LUTs are only loaded from the resolve-assist LUT folder.
+- LUTs are only loaded from the resolve-assist LUT folder; music only from its media folder.
+- Edits (music, titles) only happen on a copy of the timeline named "... (resolve-assist)".
 - Before the first change on a clip it switches to a separate grade version
   named "resolve-assist", so your own grade is untouched and undo is one click.
 ]]
 
 local BRIDGE_DIR = BRIDGE_DIR_OVERRIDE or {{BRIDGE_DIR}}
 local LUT_DIR = LUT_DIR_OVERRIDE or {{LUT_DIR}}
-local PROTOCOL = 2
+local MEDIA_DIR = MEDIA_DIR_OVERRIDE or {{MEDIA_DIR}}
+local PROTOCOL = 3
 local POLL_SECONDS = BRIDGE_POLL_SECONDS or 0.1
 local MAX_LOOPS = BRIDGE_MAX_LOOPS          -- tests only; nil = run until stopped
 local MAX_AGE = 60                          -- seconds a request stays valid
@@ -295,6 +297,81 @@ function OPS.stabilize(req)
   return { ok = ok and true or false, previous_version = prev, clip = info(it, req.target) }
 end
 
+
+-- ------------------------------------------------------------------ editing (on a timeline copy only)
+local COPY_TAG = "(resolve-assist)"
+
+local function is_copy(tl) return tl:GetName():find(COPY_TAG, 1, true) ~= nil end
+
+function OPS.duplicate_timeline()
+  local p, tl = project(), timeline()
+  local name = tl:GetName()
+  if is_copy(tl) then return { timeline = name, created = false } end
+  local copy_name = name .. " " .. COPY_TAG
+  for i = 1, p:GetTimelineCount() do
+    local t = p:GetTimelineByIndex(i)
+    if t and t:GetName() == copy_name then
+      assert(p:SetCurrentTimeline(t), "could not open " .. copy_name)
+      return { timeline = copy_name, created = false, original = name }
+    end
+  end
+  local dup = tl:DuplicateTimeline(copy_name)
+  assert(dup, "could not duplicate the timeline")
+  assert(p:SetCurrentTimeline(dup), "could not open the timeline copy")
+  return { timeline = copy_name, created = true, original = name }
+end
+
+local AUDIO_EXT = { mp3 = true, wav = true, m4a = true, aac = true, aif = true, aiff = true }
+
+function OPS.add_music(req)
+  local tl = timeline()
+  assert(is_copy(tl), "edits only happen on the resolve-assist copy of the timeline")
+  local name = req.file or ""
+  assert(name:match("^[%w][%w _%.%-]*%.%w+$") and not name:find("..", 1, true), "invalid file name")
+  assert(AUDIO_EXT[name:match("%.(%w+)$"):lower()], "music must be mp3, wav, m4a, aac or aiff")
+  local path = MEDIA_DIR .. "/" .. name
+  assert(not bmd.fileexists or bmd.fileexists(path), "music not found in the resolve-assist media folder: " .. name)
+  local mp = project():GetMediaPool()
+  local imported = mp:ImportMedia({ path })
+  assert(imported and imported[1], "Resolve could not import " .. name)
+  local audio = imported[1]
+  if tl:GetTrackCount("audio") < 2 then tl:AddTrack("audio", "stereo") end
+  local track = tl:GetTrackCount("audio")
+  local first, last = tl:GetStartFrame(), tl:GetEndFrame()
+  local stop = last - first - 1
+  local frames = tonumber(audio:GetClipProperty("Frames") or "")
+  if frames and frames > 0 then stop = math.min(stop, frames - 1) end
+  local placed = mp:AppendToTimeline({ { mediaPoolItem = audio, startFrame = 0, endFrame = stop,
+                                         mediaType = 2, trackIndex = track, recordFrame = first } })
+  assert(placed and placed[1], "Resolve could not place the music on the timeline")
+  return { ok = true, file = name, audio_track = track, frames = stop + 1, timeline = tl:GetName() }
+end
+
+function OPS.add_title(req)
+  local tl = timeline()
+  assert(is_copy(tl), "edits only happen on the resolve-assist copy of the timeline")
+  local text = req.text or ""
+  assert(#text >= 1 and #text <= 200, "text must be 1..200 characters")
+  local at = tonumber(req.at or "0")
+  assert(at and at >= 0 and at < 36000, "at must be seconds from the start")
+  local fps = fps_of(tl)
+  local frame = tl:GetStartFrame() + math.floor(at * math.floor(fps + 0.5))
+  tl:SetCurrentTimecode(frames_to_tc(frame, fps))
+  -- Make sure the title lands on its own track: add one and lock the existing video tracks.
+  local before = tl:GetTrackCount("video")
+  tl:AddTrack("video")
+  for t = 1, before do tl:SetTrackLock("video", t, true) end
+  local ok, item = pcall(function() return tl:InsertFusionTitleIntoTimeline("Text+") end)
+  for t = 1, before do tl:SetTrackLock("video", t, false) end
+  assert(ok and item, "Resolve could not insert a Text+ title")
+  local comp = item:GetFusionCompByIndex(1)
+  local tool = comp and (comp:FindToolByID("TextPlus") or comp:FindTool("Template"))
+  assert(tool, "title inserted but its text tool was not found")
+  tool:SetInput("StyledText", (text:gsub("|", "\n")))
+  return { ok = true, text = text, at = at, start = item:GetStart(), ["end"] = item:GetEnd(),
+           track = tl:GetTrackCount("video"), timeline = tl:GetName() }
+end
+
 function OPS.undo(req)
   local it = item_for(req.target)
   local name = req.version or ""
@@ -310,7 +387,7 @@ end
 
 -- ------------------------------------------------------------------ request loop
 local KEYS = { seq = 1, session = 1, ts = 1, op = 1, target = 1, node = 1, slope = 1, offset = 1,
-               power = 1, saturation = 1, lut = 1, version = 1 }
+               power = 1, saturation = 1, lut = 1, version = 1, file = 1, text = 1, at = 1 }
 local REQUEST = BRIDGE_DIR .. "/request.txt"
 local RESPONSE = BRIDGE_DIR .. "/response.txt"
 local STATUS = BRIDGE_DIR .. "/status.txt"

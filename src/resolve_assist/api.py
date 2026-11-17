@@ -395,3 +395,46 @@ def stabilize(target: str = "current") -> dict:
     res = b.call("stabilize", timeout=600, target=target)
     b.remember_previous(res.get("clip") or {}, res.get("previous_version"))
     return res
+
+
+AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".aif", ".aiff"}
+
+
+def add_music(file: str) -> dict:
+    """Put a music file from ~/Documents/resolve-assist/media under the timeline (on a timeline copy)."""
+    from .bridge import media_dir
+    name = Path(file).name  # only names inside the media folder
+    src = media_dir() / name
+    if src.suffix.lower() not in AUDIO_EXTS:
+        raise ValueError(f"music must be one of {', '.join(sorted(AUDIO_EXTS))}")
+    if not src.is_file():
+        raise ValueError(f"put the file into {media_dir()} first (not found: {name})")
+    b = _bridge()
+    copy = b.call("duplicate_timeline")
+    res = b.call("add_music", timeout=60, file=name)
+    return {"timeline": copy, "music": res}
+
+
+def add_title(text: str, at_seconds: float = 0.0) -> dict:
+    """Add a Text+ title at a time (seconds from the start) on the timeline copy. Use '|' for a new line."""
+    if not 1 <= len(text) <= 200 or any(c in text for c in "\t\r\n"):
+        raise ValueError("text must be 1..200 characters on one line (use | for a line break)")
+    b = _bridge()
+    copy = b.call("duplicate_timeline")
+    res = b.call("add_title", timeout=60, text=text, at=f"{float(at_seconds):.3f}")
+    return {"timeline": copy, "title": res}
+
+
+def make_music(preset: str = "calm-lofi", seconds: float | None = None) -> dict:
+    """Generate a royalty-free preset track into the media folder. Without seconds, it matches
+    the current timeline length (needs the bridge) or falls back to 30 s."""
+    from .audio import generate
+    from .bridge import media_dir
+    if seconds is None:
+        try:
+            info = clips()
+            frames = max(c["end"] for c in info["clips"]) - min(c["start"] for c in info["clips"])
+            seconds = frames / float(info["fps"])
+        except Exception:
+            seconds = 30.0
+    return generate(preset, float(seconds), media_dir() / f"{safe_name(preset)}-preset.wav")

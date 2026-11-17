@@ -74,19 +74,58 @@ local function clip(name, s, e)
 end
 local clips = { clip("A.mp4", 86400, 86500), clip("B.mp4", 86500, 86700) }
 local tc = "01:00:00:00"
-local tl = {
-  GetName = function() return "Timeline 1" end,
-  GetTrackCount = function() return 1 end,
-  GetItemListInTrack = function(self, kind, t) return clips end,
-  GetCurrentVideoItem = function() return clips[1] end,
-  GetSetting = function(self, k) if k == "timelineFrameRate" then return "25" end end,
-  SetCurrentTimecode = function(self, t) tc = t; return true end,
-  GetCurrentTimecode = function() return tc end,
+local function make_timeline(name)
+  local t = { name = name, tracks = { video = 1, audio = 1 }, locked = {} }
+  t.GetName = function(self) return self.name end
+  t.GetTrackCount = function(self, kind) return self.tracks[kind or "video"] end
+  t.AddTrack = function(self, kind) self.tracks[kind] = self.tracks[kind] + 1; return true end
+  t.SetTrackLock = function(self, kind, i, v) self.locked[i] = v; return true end
+  t.GetItemListInTrack = function(self, kind, i) if i == 1 then return clips end; return {} end
+  t.GetCurrentVideoItem = function() return clips[1] end
+  t.GetSetting = function(self, k) if k == "timelineFrameRate" then return "25" end end
+  t.SetCurrentTimecode = function(self, v) tc = v; return true end
+  t.GetCurrentTimecode = function() return tc end
+  t.GetStartFrame = function() return 86400 end
+  t.GetEndFrame = function() return 86700 end
+  t.DuplicateTimeline = function(self, n) return make_timeline(n) end
+  t.InsertFusionTitleIntoTimeline = function(self, kind)
+    local locked = {}
+    for k, v in pairs(self.locked) do if v then locked[#locked + 1] = k end end
+    RECORD("InsertTitle", self.name, tc, kind, #locked)
+    local tool = { SetInput = function(_, key, value) RECORD("SetInput", self.name, key, value, 0) end }
+    local comp = { FindToolByID = function(_, id) if id == "TextPlus" then return tool end end }
+    return { GetFusionCompByIndex = function() return comp end, GetStart = function() return 86400 end,
+             GetEnd = function() return 86525 end }
+  end
+  return t
+end
+local timelines = { make_timeline("Timeline 1") }
+local current = timelines[1]
+local media_pool = {
+  ImportMedia = function(self, paths)
+    RECORD("ImportMedia", "", "", paths[1], 0)
+    return { { GetClipProperty = function(_, k) if k == "Frames" then return "200" end end } }
+  end,
+  AppendToTimeline = function(self, infos)
+    local i = infos[1]
+    RECORD("AppendToTimeline", current.name, tostring(i.trackIndex), tostring(i.endFrame), i.mediaType)
+    return { {} }
+  end,
 }
 local project = {
   GetName = function() return "Test Project" end,
-  GetCurrentTimeline = function() return tl end,
+  GetCurrentTimeline = function() return current end,
+  GetTimelineCount = function() return #timelines end,
+  GetTimelineByIndex = function(self, i) return timelines[i] end,
+  SetCurrentTimeline = function(self, t)
+    local known = false
+    for _, x in ipairs(timelines) do if x == t then known = true end end
+    if not known then timelines[#timelines + 1] = t end
+    current = t; return true
+  end,
+  GetMediaPool = function() return media_pool end,
   GetSetting = function() return nil end,
+  RefreshLUTList = function() return true end,
   ExportCurrentFrameAsStill = function(self, path)
     local f = _io.open(path, "wb"); f:write(FAKE_PNG); f:close(); return true
   end,
@@ -203,6 +242,30 @@ class BridgeEndToEnd(unittest.TestCase):
         last = self.calls()[-1]
         self.assertEqual(last["op"], "SetCDL")
         self.assertNotEqual(last["value"], "0.9500 1.0000 1.0500")  # look folded into the correction
+
+    def test_music_and_title_only_on_a_timeline_copy(self):
+        media = self.env.root / "out" / "media"
+        (media / "song.wav").write_bytes(b"RIFF")
+        with self.assertRaises(BridgeError):
+            Bridge().call("add_title", text="x")        # refuses the original timeline
+        res = api.add_music("song.wav")
+        self.assertEqual(res["timeline"]["timeline"], "Timeline 1 (resolve-assist)")
+        self.assertTrue(res["timeline"]["created"])
+        imported = [c for c in self.calls() if c["op"] == "ImportMedia"][0]
+        self.assertEqual(imported["value"], str(media / "song.wav"))
+        placed = [c for c in self.calls() if c["op"] == "AppendToTimeline"][0]
+        self.assertEqual(placed["clip"], "Timeline 1 (resolve-assist)")
+        self.assertEqual((placed["version"], placed["value"], placed["node"]), ("2", "199", 2))  # audio track 2
+        t = api.add_title("Nail Art | Session", at_seconds=1.0)
+        self.assertFalse(t["timeline"]["created"])                    # reuses the copy
+        ins = [c for c in self.calls() if c["op"] == "InsertTitle"][0]
+        self.assertEqual((ins["version"], ins["value"], ins["node"]), ("00:57:37:00", "Text+", 1))  # frame 86425 @25fps; V1 locked
+        text = [c for c in self.calls() if c["op"] == "SetInput"][0]
+        self.assertEqual((text["version"], text["value"]), ("StyledText", "Nail Art \n Session"))
+        with self.assertRaises(ValueError):
+            api.add_music("../../secret.wav")
+        with self.assertRaises(ValueError):
+            api.add_title("two\nlines")
 
     def test_stabilize(self):
         res = api.stabilize("current")
