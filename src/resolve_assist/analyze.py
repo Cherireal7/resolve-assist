@@ -149,6 +149,7 @@ def crop_borders(img: Image) -> tuple[Image, dict | None]:
         "kind": "pillarbox" if cw < w and ch == h else "letterbox" if ch < h and cw == w else "windowbox",
         "removed_pct": round(100 * (1 - cw * ch / (w * h)), 1),
         "picture_size_estimate": [round(cw * sx), round(ch * sy)],
+        "box": [left, top, right, bottom],
     }
     return Image(cw, ch, cropped, img.source_width, img.source_height), info
 
@@ -204,3 +205,13 @@ def _assess(s: Stats, used_neutral: bool) -> None:
     if s.samples < 2000:
         conf -= 0.2
     s.confidence = max(0.0, min(1.0, conf))
+
+
+def apply_box(img: Image, box: list[int]) -> Image:
+    """Crop with a box from crop_borders (same sampling size); used to crop all frames of a video alike."""
+    left, top, right, bottom = box
+    if right >= img.width or bottom >= img.height:
+        return img
+    w = img.width
+    px = [img.pixels[y * w + x] for y in range(top, bottom + 1) for x in range(left, right + 1)]
+    return Image(right - left + 1, bottom - top + 1, px, img.source_width, img.source_height)

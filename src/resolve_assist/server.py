@@ -162,6 +162,28 @@ def undo_grade(target: str = "current") -> str:
     return _run(api.undo_grade, target=target)
 
 
+@mcp.tool()
+def analyze_video(path: str, fps: float = 4.0, top_match_cuts: int = 5) -> str:
+    """Find shots, the sharpest frame of each, match-cut candidates (composition/shape/position/
+    color rhymes) and write a contact sheet PNG. Needs ffmpeg."""
+    return _run(api.analyze_video, path=path, fps=fps, top_match_cuts=top_match_cuts)
+
+
+@mcp.tool()
+def analyze_music(path: str) -> str:
+    """Tempo (BPM), beats and downbeats of a music file or a video's soundtrack."""
+    return _run(api.analyze_music, path=path)
+
+
+@mcp.tool()
+def beat_edit_plan(videos: list[str], music: str, beats_per_cut: int = 2, order: str = "match",
+                   max_seconds: Optional[float] = None) -> str:
+    """Plan a music edit: cut on every N beats, pick shot segments around their best frame,
+    order shots to create match cuts ('match') or keep source order ('original')."""
+    return _run(api.beat_edit_plan, videos=videos, music=music, beats_per_cut=beats_per_cut,
+                order=order, max_seconds=max_seconds)
+
+
 def main() -> None:
     mcp.run()
 

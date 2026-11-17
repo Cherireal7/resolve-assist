@@ -86,6 +86,17 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("reset-copy", help="delete the resolve-assist timeline copy (never the original)")
     un = sub.add_parser("undo", help="restore the clip's previous grade version")
     un.add_argument("target", nargs="?", default="current")
+    av = sub.add_parser("video", help="shots, best frames, match cuts, contact sheet (needs ffmpeg)")
+    av.add_argument("path")
+    av.add_argument("--fps", type=float, default=4.0)
+    am = sub.add_parser("beats", help="tempo and beats of music or a video's soundtrack")
+    am.add_argument("path")
+    bp = sub.add_parser("beat-plan", help="beat-synced cut list from videos + music")
+    bp.add_argument("music")
+    bp.add_argument("videos", nargs="+")
+    bp.add_argument("--beats-per-cut", type=int, default=2)
+    bp.add_argument("--order", choices=("match", "original"), default="match")
+    bp.add_argument("--max-seconds", type=float)
     sub.add_parser("serve", help="run the MCP server (stdio)")
 
     args = p.parse_args(argv)
@@ -138,6 +149,12 @@ def main(argv: list[str] | None = None) -> int:
             _print(api.reset_copy())
         elif args.cmd == "undo":
             _print(api.undo_grade(args.target))
+        elif args.cmd == "video":
+            _print(api.analyze_video(args.path, args.fps))
+        elif args.cmd == "beats":
+            _print(api.analyze_music(args.path))
+        elif args.cmd == "beat-plan":
+            _print(api.beat_edit_plan(args.videos, args.music, args.beats_per_cut, args.order, args.max_seconds))
         elif args.cmd == "serve":
             try:
                 from .server import main as serve

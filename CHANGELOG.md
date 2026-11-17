@@ -4,6 +4,16 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (Phase 4: analysis engine)
+- Visual fingerprints (layout grid, edge orientation, dominant colors, brightness centroid, sharpness).
+- Shot detection with an adaptive per-shot threshold; best (sharpest) frame per shot; contact sheet PNG.
+- Match-cut finder: ranks end→start shot pairs by composition, shape, position and color, with reasons.
+- Beat tracking (stdlib): tempo 60–180 BPM with octave check, beat grid, downbeats. Verified on
+  generated tracks: 84→83.65, 112→112.2, 60→60.09 BPM.
+- Beat-synced edit plan: cuts every N beats from the first downbeat, segments centered on best frames,
+  shots ordered for match cuts. MCP: `analyze_video`, `analyze_music`, `beat_edit_plan`; CLI: `video`,
+  `beats`, `beat-plan`.
+
 ### Added (Phase 2: live Resolve)
 - Lua bridge (`bridge.lua`) over a shared folder with `fu:OpenFile`: works in the sandboxed App Store build.
 - Allowlisted ops: status, list_clips, clip_info, goto_clip, grab_frame, apply_cdl, apply_lut, undo, stop.

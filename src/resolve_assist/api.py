@@ -445,3 +445,88 @@ def make_music(preset: str = "calm-lofi", seconds: float | None = None) -> dict:
 def reset_copy() -> dict:
     """Delete the resolve-assist timeline copy (only a copy, never the original) and reopen the original."""
     return _bridge().call("reset_copy", timeout=60)
+
+
+# --------------------------------------------------------------------------- Phase 4: analysis engine
+
+def _video_shots(path: Path, fps: float):
+    from .analysis.shots import detect_shots
+    from .analysis.video import sample_frames
+    from .analyze import apply_box
+    frames = sample_frames(path, fps=fps)
+    if not frames:
+        raise ValueError("no frames could be read from the video")
+    _img, border = crop_borders(frames[len(frames) // 2][1])
+    if border:
+        frames = [(t, apply_box(img, border["box"])) for t, img in frames]
+    return frames, detect_shots(frames), border
+
+
+def _contact_sheet(name: str, frames, shots) -> str:
+    """One thumbnail per shot (its sharpest frame), left to right."""
+    thumbs = []
+    for s in shots:
+        t, img = min(frames, key=lambda f: abs(f[0] - s.best_time))
+        thumbs.append(img)
+    h = min(i.height for i in thumbs)
+    gap = 4
+    w_total = sum(i.width for i in thumbs) + gap * (len(thumbs) - 1)
+    rows = []
+    for y in range(h):
+        for k, img in enumerate(thumbs):
+            rows.extend(img.pixels[y * img.width:(y + 1) * img.width])
+            if k < len(thumbs) - 1:
+                rows.extend([(0.0, 0.0, 0.0)] * gap)
+    target = output_path(safe_name(name) + "-shots", ".png", subdir="previews", overwrite=True)
+    target.write_bytes(encode_png(w_total, h, rows))
+    return str(target)
+
+
+def analyze_video(path: str, fps: float = 4.0, top_match_cuts: int = 5) -> dict:
+    """Shots, best frame per shot, match-cut candidates and a contact sheet for one video."""
+    from .analysis.shots import match_cuts
+    from .analysis.video import probe
+    p = check_input_media(path)
+    info = probe(p)
+    frames, shots, border = _video_shots(p, fps)
+    return {
+        "video": info, "black_bars": border, "sampled_fps": fps, "shots": [s.to_dict() for s in shots],
+        "match_cuts": match_cuts(shots, top=top_match_cuts),
+        "contact_sheet": _contact_sheet(p.stem, frames, shots),
+    }
+
+
+def analyze_music(path: str) -> dict:
+    """Tempo (BPM), beat and downbeat times of a music file or a video's soundtrack."""
+    from .analysis.beats import analyze_audio
+    from .analysis.video import extract_audio
+    from .paths import check_input_audio
+    p = check_input_audio(path)
+    if p.suffix.lower() == ".wav":
+        try:
+            return analyze_audio(p)
+        except ValueError:
+            pass  # not 16-bit: decode through ffmpeg below
+    tmp = extract_audio(p)
+    try:
+        return analyze_audio(tmp)
+    finally:
+        shutil.rmtree(tmp.parent, ignore_errors=True)
+
+
+def beat_edit_plan(videos: list[str], music: str, beats_per_cut: int = 2, order: str = "match",
+                   max_seconds: float | None = None, fps: float = 4.0) -> dict:
+    """Cut list for a music-driven edit: cuts on beats, shots ordered for match cuts."""
+    from .analysis.plan import plan_cuts
+    if order not in ("match", "original"):
+        raise ValueError("order must be 'match' or 'original'")
+    m = analyze_music(music)
+    shots_by_source = []
+    for v in videos:
+        p = check_input_media(v)
+        _frames, shots, _b = _video_shots(p, fps)
+        shots_by_source.append((str(p), shots))
+    duration = min(m["duration"], max_seconds) if max_seconds else m["duration"]
+    plan = plan_cuts(shots_by_source, m["beats"], m["downbeats"], duration, beats_per_cut, order)
+    plan["music"] = {"path": music, "bpm": m["bpm"], "confidence": m["confidence"], "duration": duration}
+    return plan

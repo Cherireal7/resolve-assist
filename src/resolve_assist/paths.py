@@ -10,6 +10,7 @@ from pathlib import Path
 
 STILL_EXTS = {".png", ".tif", ".tiff", ".jpg", ".jpeg", ".dpx", ".exr", ".bmp"}
 VIDEO_EXTS = {".mov", ".mp4", ".m4v", ".mxf", ".mkv", ".avi", ".mts", ".m2ts"}
+AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".aac", ".aif", ".aiff", ".flac"}
 MEDIA_EXTS = STILL_EXTS | VIDEO_EXTS
 MAX_STILL_BYTES = 1024 * 1024 * 1024        # 1 GB
 MAX_VIDEO_BYTES = 200 * 1024 * 1024 * 1024  # 200 GB (ffmpeg seeks, never reads it all)
@@ -108,3 +109,20 @@ def output_path(name: str, ext: str, subdir: str = "LUTs", overwrite: bool = Fal
     if target.exists() and not overwrite:
         raise PathError(f"{target.name} already exists; pass overwrite=true or choose another name")
     return target
+
+
+def check_input_audio(path: str) -> Path:
+    """Validate an audio (or video, for its soundtrack) path the AI asked us to read."""
+    if not path or "\x00" in path or "://" in path:
+        raise PathError("give a local file path")
+    try:
+        p = Path(path).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise PathError(f"file not found: {path}") from exc
+    if not p.is_file():
+        raise PathError(f"not a regular file: {p}")
+    if p.suffix.lower() not in AUDIO_EXTS | VIDEO_EXTS:
+        raise PathError(f"unsupported audio type '{p.suffix}'")
+    if p.stat().st_size > MAX_VIDEO_BYTES:
+        raise PathError("file is larger than the safety limit")
+    return p
