@@ -92,7 +92,9 @@ def _extract_wav(src: Path, start: float | None, duration: float | None, tmp: Pa
     cmd += ["-i", "file:" + str(src)]
     if duration:
         cmd += ["-t", f"{duration:.3f}"]
-    cmd += ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(out)]
+    # Phone audio is often quiet: cut rumble and even out the level so speech is easier to hear.
+    cmd += ["-vn", "-ac", "1", "-ar", "16000", "-af", "highpass=f=100,dynaudnorm=f=150:g=15",
+            "-c:a", "pcm_s16le", str(out)]
     proc = subprocess.run(cmd, capture_output=True, timeout=900, check=False)
     if proc.returncode != 0 or not out.is_file():
         raise CaptionError(proc.stderr.decode("utf-8", "replace").strip()[-300:] or "no audio track")

@@ -69,3 +69,8 @@ Implications for Phase 2:
 | stabilize (TimelineItem:Stabilize) | ✅ works on Free, ~6 s for a 6 s clip |
 | add_music (ImportMedia + AppendToTimeline, audio track 2) | ✅ on the timeline copy |
 | add_title via Timeline:InsertFusionTitleIntoTimeline | ⚠️ fails with V1 locked; unlocked it does an **insert edit on V1** and splits the clip → replaced (protocol 5) by a Text+ composited inside the clip with Fusion |
+
+### Real footage notes (2026-11-20)
+- Phone clips: 3840×2160 HEVC, 60 fps, rotation −90 (portrait). ffmpeg auto-rotates when decoding.
+- whisper.cpp `base`, auto language: background chatter was mis-detected as Korean and produced
+  bracketed hallucinations (filtered). For non-English speech set the language; Amharic support is weak.

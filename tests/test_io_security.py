@@ -118,6 +118,7 @@ class APITests(unittest.TestCase):
     def test_end_to_end_png_workflow(self):
         with TempEnv() as env:
             os.environ["PATH"] = ""  # force built-in decoder
+            os.environ["RESOLVE_ASSIST_FFMPEG"] = "none"
             w, h, px = scene(cast=(1.12, 1.0, 0.85))
             still = write_png(env.root, "shot.png", w, h, px, depth=16)
             stats = api.analyze(str(still))
@@ -145,7 +146,8 @@ class APITests(unittest.TestCase):
             tiff = env.root / "s.tiff"
             subprocess.run(["sips", "-s", "format", "tiff", str(png), "--out", str(tiff)],
                            capture_output=True, check=True)
-            os.environ["PATH"] = "/usr/bin"  # sips yes, ffmpeg (homebrew) no
+            os.environ["PATH"] = "/usr/bin"  # sips yes
+            os.environ["RESOLVE_ASSIST_FFMPEG"] = "none"  # ffmpeg off
             stats = api.analyze(str(tiff))
             self.assertEqual(stats["decoder"], "sips")
             self.assertEqual(stats["source_width"], 64)

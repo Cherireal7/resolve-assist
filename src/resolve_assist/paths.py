@@ -61,6 +61,8 @@ def resolve_lut_dir() -> Path | None:
 
 def find_ffmpeg() -> str | None:
     override = os.environ.get("RESOLVE_ASSIST_FFMPEG")
+    if override == "none":  # explicit off-switch (tests of the fallback decoders)
+        return None
     if override and Path(override).is_file():
         return override
     found = shutil.which("ffmpeg")

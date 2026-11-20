@@ -4,6 +4,16 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Fixed (first run on real footage, 2026-11-20)
+- Beat plans no longer repeat one moment: shots are split into beat-length moments with their own
+  fingerprints; nothing repeats until every moment was used; continuous footage is not called a cut.
+- Hardware video decoding (`-hwaccel auto`): 4K HEVC phone clips sample 7x faster (26 s → 3.9 s);
+  thumbnails were downscaled twice (56×100 instead of 112×200).
+- Video probe reports the displayed size and orientation (phones store portrait video sideways + rotation).
+- Captions: quiet phone audio is high-passed and level-normalized before transcription; a clear note
+  when no speech is found. Library now builds transition clips (79 assets total).
+- Test off-switch `RESOLVE_ASSIST_FFMPEG=none` for the fallback-decoder tests.
+
 ### Added (Phase 5: assembly + workspace)
 - `build_edit` / `assemble_beat_edit`: build a NEW '(resolve-assist)' timeline from a plan: segments
   frame-accurate from the Media Pool (reused by file path), music on A1, a library SFX on every cut

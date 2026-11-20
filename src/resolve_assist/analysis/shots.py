@@ -106,3 +106,27 @@ def match_cuts(shots: list[Shot], top: int = 5, min_score: float = 0.55) -> list
                 })
     cands.sort(key=lambda c: -c["score"])
     return cands[:top]
+
+
+def windows(frames: list[Frame], shots: list[Shot], length: float) -> list[Shot]:
+    """Split shots into non-overlapping beat-length moments, each with its own fingerprints,
+    so an edit can use many different moments of one long take instead of repeating one."""
+    if length <= 0:
+        raise ValueError("length must be > 0")
+    out: list[Shot] = []
+    for shot in shots:
+        inside = [(t, img) for t, img in frames if shot.start <= t < shot.end + 1e-6]
+        if not inside:
+            continue
+        t = shot.start
+        while t + length <= shot.end + 1e-6 or (t == shot.start and shot.end - shot.start >= 0.3):
+            a, b = t, min(t + length, shot.end)
+            seg = [(ft, img) for ft, img in inside if a - 1e-6 <= ft <= b + 1e-6] or [min(inside, key=lambda f: abs(f[0] - a))]
+            fps_ = [fingerprint(img) for _, img in (seg[0], seg[-1])]
+            mid = min(seg, key=lambda f: abs(f[0] - (a + b) / 2))
+            out.append(Shot(len(out), a, b, fps_[0], fps_[-1], mid[0], max(f.sharpness for f in fps_)))
+            out[-1].extra_parent = shot.index  # type: ignore[attr-defined]
+            if b >= shot.end - 1e-6:
+                break
+            t += length
+    return out

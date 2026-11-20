@@ -28,30 +28,42 @@ def plan_cuts(shots_by_source: list[tuple[str, list[Shot]]], beats: list[float],
         cuts.append(duration)
 
     plan = []
-    used: list[int] = []
+    uses = [0] * len(pool)
     prev = None
+    prev_src = None
     for k in range(len(cuts) - 1):
         length = cuts[k + 1] - cuts[k]
-        fits = [i for i in range(len(pool)) if i not in used] or list(range(len(pool)))
+        least = min(uses)
+        fits = [i for i in range(len(pool)) if uses[i] == least and pool[i][1].end - pool[i][1].start >= length - 0.05]
+        fits = fits or [i for i in range(len(pool)) if uses[i] == least] or list(range(len(pool)))
         if order == "match" and prev is not None:
-            # Prefer the shot whose opening frame rhymes with the previous shot's last frame.
-            i = max(fits, key=lambda j: similarity(prev.last, pool[j][1].first)["total"])
+            def score(j: int) -> float:
+                sim = similarity(prev.last, pool[j][1].first)["total"]
+                if pool[j][0] == prev_src and abs(pool[j][1].start - prev.end) < 0.05:
+                    sim -= 0.3            # continuous footage is not a cut, avoid
+                if pool[j][0] != prev_src:
+                    sim += 0.05           # alternate sources for variety
+                return sim
+            i = max(fits, key=score)
             reason = f"match cut (similarity {similarity(prev.last, pool[i][1].first)['total']:.2f})"
         else:
             i = fits[0]
-            reason = "next shot in order"
-        used.append(i)
+            reason = "opening shot" if prev is None else "next shot in order"
+        uses[i] += 1
         src, shot = pool[i]
         avail = shot.end - shot.start
-        if avail >= length:
-            src_in = min(max(shot.start, shot.best_time - length / 2), shot.end - length)
+        if avail >= length - 0.05:  # within ~1-2 frames is fine
+            length_used = min(length, avail)
+            src_in = min(max(shot.start, shot.best_time - length_used / 2), shot.end - length_used)
             note = None
         else:
-            src_in, note = shot.start, f"shot is {avail:.2f}s, needs {length:.2f}s: hold or speed-ramp"
+            src_in, note = shot.start, f"moment is {avail:.2f}s, needs {length:.2f}s: hold or speed-ramp"
+        if uses[i] > 1:
+            reason += " (all moments used once: repeating)"
         plan.append({
             "timeline_in": round(cuts[k], 3), "duration": round(length, 3), "source": src, "shot": shot.index,
             "source_in": round(src_in, 3), "source_out": round(src_in + min(length, avail), 3),
             "why": reason, **({"note": note} if note else {}),
         })
-        prev = shot
+        prev, prev_src = shot, src
     return {"cuts_on_beats": [round(c, 3) for c in cuts], "beats_per_cut": beats_per_cut, "segments": plan}

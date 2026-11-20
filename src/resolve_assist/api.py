@@ -520,12 +520,16 @@ def beat_edit_plan(videos: list[str], music: str, beats_per_cut: int = 2, order:
     from .analysis.plan import plan_cuts
     if order not in ("match", "original"):
         raise ValueError("order must be 'match' or 'original'")
+    from .analysis.shots import windows
     m = analyze_music(music)
+    if not m["bpm"]:
+        raise ValueError("no beat found in the music")
+    seg_len = 60.0 / m["bpm"] * beats_per_cut
     shots_by_source = []
     for v in videos:
         p = check_input_media(v)
-        _frames, shots, _b = _video_shots(p, fps)
-        shots_by_source.append((str(p), shots))
+        frames, shots, _b = _video_shots(p, fps)
+        shots_by_source.append((str(p), windows(frames, shots, seg_len)))  # beat-length moments
     duration = min(m["duration"], max_seconds) if max_seconds else m["duration"]
     plan = plan_cuts(shots_by_source, m["beats"], m["downbeats"], duration, beats_per_cut, order)
     plan["music"] = {"path": music, "bpm": m["bpm"], "confidence": m["confidence"], "duration": duration}
@@ -593,7 +597,11 @@ def captions_for_file(path: str, model: str = "base", language: str = "auto", ma
     cues = transcribe(p, model, language, max_chars)
     out = output_path(p.stem, ".srt", subdir="captions", overwrite=True)
     out.write_text(to_srt(cues), encoding="utf-8")
-    return {"srt": str(out), "cues": len(cues), "preview": [c.text for c in cues[:8]], "folder": str(captions_dir())}
+    result = {"srt": str(out), "cues": len(cues), "preview": [c.text for c in cues[:8]], "folder": str(captions_dir())}
+    if not cues:
+        result["note"] = ("No clear speech found (only music/background noise, or a language the model can't "
+                          "read). Try language='en' or another code, or model='small'. Whisper is weak at Amharic.")
+    return result
 
 
 def captions_for_timeline(model: str = "base", language: str = "auto", max_chars: int = 32,
