@@ -132,9 +132,20 @@ def build_library(force: bool = False, log: Callable[[str], None] = lambda s: No
     else:
         b.skipped.append("transitions/*.mp4: ffmpeg not installed (brew install ffmpeg), run again afterwards")
 
-    # User folders (filled by you: downloaded PowerGrades, stock clips, extra SFX)
-    for folder in ("powergrades", "user-sfx", "user-footage", "user-music"):
+    # User folders (filled by you: downloaded PowerGrades, stock clips, extra SFX) and renders from
+    # motion-studio (`npm run make -- <config> --to-resolve`) / Higgsfield downloads.
+    for folder in ("powergrades", "user-sfx", "user-footage", "user-music", "motion", "ai-generated"):
         (root / folder).mkdir(exist_ok=True)
+    for folder, usage in (("motion", "Rendered in motion-studio. .mov = transparent (ProRes 4444): put on a track above, Normal mode"),
+                          ("ai-generated", "Generated with Higgsfield (check credits/terms); use like stock footage/images"),
+                          ("powergrades", "PowerGrade: apply with apply_powergrade")):
+        for f in sorted((root / folder).iterdir()):
+            if f.is_file() and f.suffix.lower() in {".mp4", ".mov", ".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".drx"}:
+                words = [w for w in f.stem.replace("_", "-").split("-") if w and not w.isdigit()]
+                alpha = f.suffix.lower() == ".mov"
+                b.items.append({"id": f.stem, "category": folder, "file": f"{folder}/{f.name}",
+                                "tags": [folder, *words, *(["transparent", "overlay"] if alpha else [])],
+                                "usage": usage, "license": "yours (made by you)" if folder != "powergrades" else "see source"})
 
     manifest = {"generated": time.strftime("%Y-%m-%d %H:%M"), "root": str(root), "items": b.items}
     (root / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")

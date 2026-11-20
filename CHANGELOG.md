@@ -4,6 +4,11 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (pipeline)
+- Library indexes `library/motion/` (Motion Studio renders, .mov = transparent) and
+  `library/ai-generated/` (Higgsfield) so they can be searched and imported into Resolve.
+- Workspace guide: full Higgsfield → Motion Studio → Resolve pipeline and credit rules.
+
 ### Fixed (first run on real footage, 2026-11-20)
 - Beat plans no longer repeat one moment: shots are split into beat-length moments with their own
   fingerprints; nothing repeats until every moment was used; continuous footage is not called a cut.
