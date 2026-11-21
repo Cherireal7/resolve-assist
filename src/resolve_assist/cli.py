@@ -132,7 +132,8 @@ def main(argv: list[str] | None = None) -> int:
     orc.add_argument("--scene", help="switch to this scene first")
     ost = sub.add_parser("obs-stop", help="OBS: stop recording, print the file, index it in the library")
     ost.add_argument("--no-index", action="store_true", help="don't refresh the library index")
-    sub.add_parser("doctor", help="check the whole setup and show fixes")
+    dr = sub.add_parser("doctor", help="check the whole setup and show fixes")
+    dr.add_argument("--json", action="store_true", help="machine-readable output (used by the Tibeb app)")
     ep = sub.add_parser("prep", help="talking-head clip: transcript, cut silences, script segments, planning page")
     ep.add_argument("video")
     ep.add_argument("project")
@@ -254,6 +255,9 @@ def main(argv: list[str] | None = None) -> int:
             _print(api.project_kit(args.project, args.queries, args.per_query))
         elif args.cmd == "doctor":
             res = api.doctor()
+            if args.json:
+                _print(res)
+                return 0
             for c in res["checks"]:
                 mark = "✅" if c["ok"] else "❌"
                 print(f"{mark} {c['check']:24s} {c['detail']}")

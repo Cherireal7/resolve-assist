@@ -62,6 +62,10 @@ case "$cmd" in
   kit)
     [[ $# -ge 2 ]] || { say 'Usage: studio kit "Project" whoosh "warm light leak 9:16" "uplift music"'; exit 2; }
     need_ra; "$RA" kit "$@" && open "$WORKSPACE/projects/$1/kit" ;;
+  app)
+    APPDIR="$(conf app)"; APPDIR="${APPDIR:-$HOME/Documents/Github/tibeb}"
+    [[ -d "$APPDIR/node_modules" ]] || { say "The app is not installed yet: cd $APPDIR && npm install"; exit 1; }
+    cd "$APPDIR" && { [[ -f dist/main/main.js ]] || npm run build >/dev/null; } && (node_modules/.bin/electron . >/dev/null 2>&1 &) ;;
   prep)
     [[ $# -ge 2 ]] || { say 'Usage: studio prep <video file> "Project"   (cuts silences, makes the planning page)'; exit 2; }
     need_ra; v="$1"; shift; "$RA" prep "$v" "$*" && open "$WORKSPACE/projects/$*/prep/plan.html" ;;
@@ -81,6 +85,7 @@ case "$cmd" in
 studio                       start a session: opens your editor ($EDITOR_APP) and Claude in the workspace
 studio capcut | resolve | none   same, with a one-off editor choice
 studio editor [name]         show or set the default editor (resolve, capcut, none)
+studio app                   open the Tibeb app (projects, library, setup)
 studio new "Name"            create projects/<Name>/ (footage, music, stills, exports, captions, kit)
 studio add "Name" [files…]  sort the project inbox (plus any files given) into folders and index them
 studio open [Name]           open a project folder in Finder (no name: list them)
