@@ -26,6 +26,12 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
   sorted into footage, stills, maps, refs, voice, music, docs (never overwritten) and indexed in
   `project.json` (kind, duration, dimensions; unchanged files are not measured again). Each project
   gets a `brief.md` with a decisions log. The workspace guide tells the AI to read these first.
+- `narrate` (MCP/CLI), `narration.py`: script -> voice audio + word timings + `{cue}` times in the project.
+  Providers: `edge` (optional `edge-tts`, natural voices incl. Amharic, text goes to Microsoft) and `say`
+  (local system voice, word times from local transcription).
+- `commons_search` / `commons_add` (MCP), `commons` (CLI): Wikimedia Commons images with licence, author
+  and source recorded; flags for free, attribution and share-alike. `project_credit` + generated `CREDITS.md`.
+- `doctor --json` for the Tibeb app.
 - `analyze_music` uses the tempo stored for generated library tracks (syncopated presets can read as
   2/3 or half tempo otherwise). `make-music` accepts every preset.
 

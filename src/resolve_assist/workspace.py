@@ -95,6 +95,11 @@ animated graphics, text overlays, `npm run make -- <config> --to-resolve`) → t
   state the cost and remaining balance (`higgsfield account status`), and wait for an OK.
   Save results to `library/ai-generated/` and run `library_build` to index them.
 - After adding files to `library/`, run `library_build` so `library_search`/`import_assets` see them.
+- Narration: `narrate` turns a script into voice audio with word and cue timings (put `{cue}` markers
+  before the words that should trigger visuals). Tell the user that the natural voices send the script
+  text to Microsoft; the local voice does not.
+- Real pictures: `commons_search` then `commons_add` (licence recorded automatically). Prefer public
+  domain / CC0; report attribution and share-alike notes. For anything else use `project_credit`.
 - Talking-head clips: `edit_prep` (cut silences, word transcript) → `edit_plan` with your scene
   recommendations → the user picks scenes in `projects/<name>/prep/plan.html` and pastes the plan back →
   build with Motion Studio's `MinimalStory` → revisions → sound design last. Use the
@@ -234,6 +239,9 @@ def project_index(project: str) -> dict:
                 files.append(prev)
                 continue
             entry = {"file": rel, "kind": kind, "bytes": st.st_size, "mtime": int(st.st_mtime)}
+            for k in CREDIT_KEYS:                       # a credit belongs to the file, not to one version of it
+                if prev and prev.get(k):
+                    entry[k] = prev[k]
             if f.suffix.lower() in _VIDEO | _AUDIO | (_IMAGE - {".svg"}):
                 try:
                     from .analysis.video import probe
@@ -256,7 +264,77 @@ def project_index(project: str) -> dict:
             "counts": counts, "prepared": prep, "has_plan": (proj / "prep" / "plan.html").exists(),
             "has_edit": (proj / "edit.json").exists(), "files": files}
     path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    _write_credits(proj, files)
     return {"index": str(path), "brief": str(brief), "counts": counts, "new": new, "prepared": prep}
+
+
+CREDIT_KEYS = ("source", "license", "author")
+
+
+def _write_credits(proj: Path, files: list[dict]) -> None:
+    """CREDITS.md: every third-party file with its source and licence (generated; edit via project_credit)."""
+    rows = [f for f in files if any(f.get(k) for k in CREDIT_KEYS)]
+    if not rows:
+        return
+    lines = [f"# Credits: {proj.name}", "", "Generated from project.json. Third-party material used in this video.", "",
+             "| File | Licence | Author | Source |", "|---|---|---|---|"]
+    lines += [f"| `{f['file']}` | {f.get('license', '')} | {f.get('author', '')} | {f.get('source', '')} |" for f in rows]
+    warn = [f["file"] for f in rows if "sa" in re.split(r"[\s-]+", str(f.get("license", "")).lower())]
+    if warn:
+        lines += ["", "Share-alike licences apply to: " + ", ".join(f"`{x}`" for x in warn)
+                  + ". A video using them may have to be published under the same licence."]
+    (proj / "CREDITS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def project_credit(project: str, file: str, source: str = "", license: str = "", author: str = "") -> dict:
+    """Record where a project file came from and under which licence (kept in project.json, listed in CREDITS.md)."""
+    proj = Path(new_project(project)["project"])
+    project_index(project)
+    path = proj / "project.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    entry = next((e for e in data["files"] if e["file"] == file or Path(e["file"]).name == file), None)
+    if entry is None:
+        raise ValueError(f"no such file in the project: {file}")
+    for k, v in (("source", source), ("license", license), ("author", author)):
+        v = " ".join(str(v).split())[:300]
+        if v:
+            entry[k] = v
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    _write_credits(proj, data["files"])
+    return {"file": entry["file"], **{k: entry.get(k, "") for k in CREDIT_KEYS}, "credits": str(proj / "CREDITS.md")}
+
+
+def commons_add(project: str, title: str, name_hint: str = "") -> dict:
+    """Download an image from Wikimedia Commons into the project (stills, or maps when the name says map)
+    with its licence, author and source recorded."""
+    from . import commons
+    proj = Path(new_project(project)["project"])
+    folder = "maps" if "map" in (name_hint or title).lower() else "stills"
+    got = commons.fetch(title, proj / folder)
+    rel = Path(got["path"]).relative_to(proj).as_posix()
+    project_index(project)
+    credit = project_credit(project, rel, got["source"], got["license"], got["author"])
+    notes = []
+    if got["share_alike"]:
+        notes.append("Share-alike licence: a video using this image may have to be published under the same licence.")
+    elif got["attribution"]:
+        notes.append("Attribution required: credit the author in the video or its description.")
+    elif not got["free"]:
+        notes.append("Licence is not clearly free: check the source page before using it.")
+    return {**credit, "notes": notes}
+
+
+def project_narrate(project: str, text: str, name: str = "narration", voice: str | None = None, rate: str = "+0%",
+                    provider: str = "auto") -> dict:
+    """Script -> voice audio in projects/<project>/voice/ and word/cue timings in prep/<name>.narration.json."""
+    from .narration import narrate
+    clean = re.sub(r"[^A-Za-z0-9_-]+", "-", name).strip("-")[:40] or "narration"
+    proj = Path(new_project(project)["project"])
+    res = narrate(text, proj / "voice" / f"{clean}.wav", proj / "prep" / f"{clean}.narration.json", voice, rate, provider)
+    (proj / "docs").mkdir(exist_ok=True)
+    (proj / "docs" / f"{clean}.script.txt").write_text(text.strip() + "\n", encoding="utf-8")
+    project_index(project)
+    return res
 
 
 def preferred_editor() -> str:

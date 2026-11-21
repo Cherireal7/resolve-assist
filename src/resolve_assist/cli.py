@@ -142,6 +142,22 @@ def main(argv: list[str] | None = None) -> int:
     ep.add_argument("--model", default="base")
     ep.add_argument("--language", default="auto")
     ep.add_argument("--no-render", action="store_true")
+    na = sub.add_parser("narrate", help="script file -> narration audio + word and cue timings in a project")
+    na.add_argument("project")
+    na.add_argument("script", help="text file; blank lines = pauses, {cue} markers before words")
+    na.add_argument("--name", default="narration")
+    na.add_argument("--voice")
+    na.add_argument("--rate", default="+0%")
+    na.add_argument("--provider", default="auto", choices=("auto", "edge", "say"))
+    cs = sub.add_parser("commons", help="search Wikimedia Commons, or add an image to a project with its licence")
+    cs.add_argument("query", help="search words, or with --add the file title / page URL")
+    cs.add_argument("--add", metavar="PROJECT")
+    cr = sub.add_parser("credit", help="record source/licence/author for a project file")
+    cr.add_argument("project")
+    cr.add_argument("file")
+    cr.add_argument("--source", default="")
+    cr.add_argument("--license", default="")
+    cr.add_argument("--author", default="")
     it = sub.add_parser("intake", help="sort projects/<project>/inbox into typed folders and index the project")
     it.add_argument("project")
     kt = sub.add_parser("kit", help="copy library assets into projects/<project>/kit (for CapCut / any editor)")
@@ -249,6 +265,13 @@ def main(argv: list[str] | None = None) -> int:
                                 not args.no_render)
             res["plan"] = api.edit_plan(args.project)["plan"]
             _print(res)
+        elif args.cmd == "narrate":
+            from pathlib import Path as _P
+            _print(api.narrate(args.project, _P(args.script).read_text(encoding="utf-8"), args.name, args.voice, args.rate, args.provider))
+        elif args.cmd == "commons":
+            _print(api.commons_add(args.add, args.query) if args.add else api.commons_search(args.query))
+        elif args.cmd == "credit":
+            _print(api.project_credit(args.project, args.file, args.source, args.license, args.author))
         elif args.cmd == "intake":
             _print(api.project_intake(args.project))
         elif args.cmd == "kit":

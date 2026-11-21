@@ -304,6 +304,38 @@ def new_project(name: str) -> str:
 
 
 @mcp.tool()
+def narrate(project: str, text: str, name: str = "narration", voice: Optional[str] = None, rate: str = "+0%",
+            provider: str = "auto") -> str:
+    """Script -> narration audio (projects/<project>/voice/<name>.wav) with word timings and cue times
+    (prep/<name>.narration.json) for captions and scene timing. Blank lines separate paragraphs (short
+    pause); a marker like {map} right before a word records when that word is spoken. provider: 'edge'
+    = natural Microsoft voices incl. Amharic (the text is sent to Microsoft; say so to the user), 'say' =
+    local system voice, 'auto' = edge when installed. Voices look like en-GB-RyanNeural, am-ET-AmehaNeural."""
+    return _run(api.narrate, project=project, text=text, name=name, voice=voice, rate=rate, provider=provider)
+
+
+@mcp.tool()
+def commons_search(query: str, limit: int = 12) -> str:
+    """Search Wikimedia Commons for real pictures (paintings, portraits, documents, maps). Each result
+    has its licence, author and flags: free (public domain/CC0), attribution, share_alike."""
+    return _run(api.commons_search, query=query, limit=limit)
+
+
+@mcp.tool()
+def commons_add(project: str, title: str, name_hint: str = "") -> str:
+    """Download a Wikimedia Commons image (title from commons_search or its page URL) into the project
+    with licence, author and source recorded in project.json and CREDITS.md. Prefer free results; tell
+    the user about attribution or share-alike notes."""
+    return _run(api.commons_add, project=project, title=title, name_hint=name_hint)
+
+
+@mcp.tool()
+def project_credit(project: str, file: str, source: str = "", license: str = "", author: str = "") -> str:
+    """Record source, licence and author for any third-party file in a project (stock clip, music, map)."""
+    return _run(api.project_credit, project=project, file=file, source=source, license=license, author=author)
+
+
+@mcp.tool()
 def project_intake(project: str) -> str:
     """Sort whatever the user dropped into projects/<project>/inbox/ (footage, photos, map images, voice,
     music, references, scripts) into typed folders and refresh project.json: every file with kind,

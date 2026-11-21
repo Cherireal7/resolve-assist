@@ -13,6 +13,7 @@ dependencies = []
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.12,<2"]
+tts = ["edge-tts>=6"]
 
 [project.scripts]
 resolve-assist = "resolve_assist.cli:main"

@@ -730,6 +730,31 @@ def project_intake(project: str) -> dict:
     return _intake(project)
 
 
+def narrate(project: str, text: str, name: str = "narration", voice: str | None = None, rate: str = "+0%",
+            provider: str = "auto") -> dict:
+    """Turn a script into narration audio plus word and cue timings inside the project."""
+    from .workspace import project_narrate
+    return project_narrate(project, text, name, voice, rate, provider)
+
+
+def commons_search(query: str, limit: int = 12) -> dict:
+    """Search Wikimedia Commons for images; every result carries licence and author."""
+    from . import commons
+    if not query.strip() or len(query) > 200:
+        raise ValueError("give a few search words")
+    return {"results": commons.search(query, limit)}
+
+
+def commons_add(project: str, title: str, name_hint: str = "") -> dict:
+    from .workspace import commons_add as _add
+    return _add(project, title, name_hint)
+
+
+def project_credit(project: str, file: str, source: str = "", license: str = "", author: str = "") -> dict:
+    from .workspace import project_credit as _credit
+    return _credit(project, file, source, license, author)
+
+
 def project_kit(project: str, queries: list[str], per_query: int = 1) -> dict:
     """Copy library assets matching each phrase into projects/<project>/kit/ (for CapCut or any editor)."""
     from .workspace import project_kit as _kit

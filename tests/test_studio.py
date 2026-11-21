@@ -192,5 +192,47 @@ class EditPrepTests(unittest.TestCase):
             self.assertEqual(set(data["types"]), set(SCENE_TYPES))
 
 
+class NarrationAndCreditTests(unittest.TestCase):
+    def test_script_markers_and_token_positions(self):
+        from resolve_assist.narration import language_of, locate, split_script
+        segs = split_script("In {y}1483, a boy\nwas born.\n\n{end}The end.")
+        self.assertEqual(segs[0], ("In 1483, a boy was born.", [("y", 3)]))
+        self.assertEqual(segs[1], ("The end.", [("end", 0)]))
+        self.assertEqual(locate("In 1483, a boy was born.", [{"text": "In 1483,"}, {"text": "a"}, {"text": "boy"}]), [0, 9, 11])
+        self.assertEqual((language_of("ሰላም world"), language_of("hello")), ("am", "en"))
+
+    def test_commons_metadata_is_reduced_to_licence_facts(self):
+        from resolve_assist.commons import _info
+        page = {"title": "File:X.jpg", "imageinfo": [{"descriptionurl": "https://commons.wikimedia.org/wiki/File:X.jpg", "mime": "image/jpeg",
+                "thumburl": "https://upload.wikimedia.org/x.jpg", "width": 10, "height": 20,
+                "extmetadata": {"LicenseShortName": {"value": "CC BY-SA 4.0"}, "Artist": {"value": "<a href='x'>Some &amp; One</a>"}}}]}
+        info = _info(page)
+        self.assertEqual((info["license"], info["author"], info["free"], info["share_alike"], info["attribution"]),
+                         ("CC BY-SA 4.0", "Some & One", False, True, True))
+        page["imageinfo"][0]["extmetadata"]["LicenseShortName"]["value"] = "Public domain"
+        self.assertEqual((_info(page)["free"], _info(page)["share_alike"]), (True, False))
+        self.assertIsNone(_info({"title": "File:gone"}))
+
+    def test_credits_survive_reindexing_and_are_listed(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["RESOLVE_ASSIST_OUTPUT"] = d
+            try:
+                proj = Path(workspace.new_project("Doc")["project"])
+                (proj / "music" / "song.mp3").write_bytes(b"ID3")
+                res = workspace.project_credit("Doc", "song.mp3", "https://example.org/song", "CC BY-SA 4.0", "A. Writer")
+                self.assertEqual(res["file"], "music/song.mp3")
+                (proj / "music" / "song.mp3").write_bytes(b"ID3-changed-file")
+                workspace.project_index("Doc")
+                entry = json.loads((proj / "project.json").read_text())["files"][0]
+                self.assertEqual((entry["license"], entry["author"]), ("CC BY-SA 4.0", "A. Writer"))
+                credits = (proj / "CREDITS.md").read_text()
+                self.assertIn("music/song.mp3", credits)
+                self.assertIn("Share-alike", credits)
+                with self.assertRaises(ValueError):
+                    workspace.project_credit("Doc", "missing.png", license="x")
+            finally:
+                os.environ.pop("RESOLVE_ASSIST_OUTPUT", None)
+
+
 if __name__ == "__main__":
     unittest.main()
