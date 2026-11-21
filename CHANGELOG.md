@@ -35,6 +35,11 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 - 20 tactile SFX (`library/sfx_tactile.py`): soft/mechanical/switch clicks, wood and glass taps, stamp, paper
   slide, page turn, pen scribble, marker stroke, pencil tick, tape, typewriter keys, plucks, wood block,
   tiny bell, soft shutter. Library: 370 assets, 107 SFX.
+- `handoff` (MCP/CLI), `handoff.py`: a project's `edit.json` exported as layers into `handoff/`: cut picture
+  clips, each text as a transparent .mov (via Motion Studio), audio stems, `.cube` looks, `timeline.otio`,
+  `timeline.fcpxml`, `manifest.json` and a README with every clip's start time. Overlapping clips get their
+  own lanes. The timeline files have not been opened in an editor yet.
+- `peaks` (waveform outline + beats, cached) and `look-curves` for the Tibeb editor.
 - `analyze_music` uses the tempo stored for generated library tracks (syncopated presets can read as
   2/3 or half tempo otherwise). `make-music` accepts every preset.
 

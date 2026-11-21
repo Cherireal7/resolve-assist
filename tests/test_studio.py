@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import unittest
 import wave
@@ -266,6 +267,59 @@ class EditorSupportTests(unittest.TestCase):
         self.assertEqual(len(warm["r"]), 17)
         self.assertGreater(warm["r"][12], warm["b"][12])          # warm look: more red than blue in the highlights
         self.assertTrue(all(b >= a for a, b in zip(warm["g"], warm["g"][1:])))   # monotonic tone curve
+
+
+@unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")
+class HandoffTests(unittest.TestCase):
+    def test_layers_timeline_and_readme_are_written(self):
+        import subprocess
+        import xml.dom.minidom
+        from resolve_assist import handoff
+        with tempfile.TemporaryDirectory() as d:
+            proj = Path(d) / "My Video"
+            for sub in ("footage", "stills", "music"):
+                (proj / sub).mkdir(parents=True)
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=s=180x320:r=30:d=3", "-f", "lavfi", "-i", "sine=f=440:d=3",
+                            "-pix_fmt", "yuv420p", "-shortest", str(proj / "footage" / "a.mp4")], check=True)
+            (proj / "stills" / "p.png").write_bytes(encode_png_1x1())
+            generate("ambient", 4.0, proj / "music" / "m.wav")
+            pre = "projects/my-video/"
+            media = lambda i, kind, src, start, length, **kw: {"id": i, "kind": kind, "src": pre + src, "start": start, "length": length, "in": 0, "volume": 1,
+                                                              "fit": "cover", "scale": 1, "x": 0, "y": 0, "opacity": 1, "zoom": 0, **kw}
+            doc = {"version": 1, "duration": 4, "background": "#000000", "credit": "Edit by Cheri", "tracks": [
+                {"id": "text", "name": "Text", "kind": "text", "clips": [{"id": "t1", "kind": "text", "text": "Hello", "start": 0.5, "length": 2, "style": "headline", "motion": "rise", "size": 8, "color": "#fff", "accent": "#f80", "x": 50, "y": 30, "align": "center"}]},
+                {"id": "video", "name": "Video", "kind": "video", "clips": [media("v1", "video", "footage/a.mp4", 0, 2, **{"in": 0.5}), media("v2", "image", "stills/p.png", 2, 2, look="golden-hour", lookStrength=0.6),
+                                                                              media("v3", "image", "stills/p.png", 1, 2)]},
+                {"id": "music", "name": "Music", "kind": "audio", "clips": [{"id": "m1", "kind": "audio", "src": pre + "music/m.wav", "start": 0, "length": 9, "in": 0, "volume": 0.4, "fadeIn": 0.2, "fadeOut": 1}]}]}
+            (proj / "edit.json").write_text(json.dumps(doc))
+            res = handoff.build(proj, "9x16", None)
+            out = proj / "handoff"
+            self.assertEqual(res["counts"], {"audio": 1, "video": 1, "image": 2})
+            self.assertEqual(len(list((out / "video").iterdir())), 3)
+            self.assertEqual(len(list((out / "looks").glob("*.cube"))), 1)
+            self.assertTrue(any("not rendered" in n for n in res["notes"]) and any("credit" in n for n in res["notes"]))
+            otio = json.loads((out / "timeline.otio").read_text())
+            names = [t["name"] for t in otio["tracks"]["children"]]
+            self.assertEqual(names, ["Video", "Video 2", "Music"])                 # the overlapping still gets its own lane
+            first = otio["tracks"]["children"][0]["children"]
+            self.assertEqual([k["OTIO_SCHEMA"] for k in first], ["Clip.2", "Clip.2"])
+            self.assertEqual(first[0]["source_range"]["duration"]["value"], 60.0)
+            music = otio["tracks"]["children"][2]["children"][0]
+            self.assertEqual(music["source_range"]["duration"]["value"], 120.0)    # cut at the video's end
+            xml.dom.minidom.parse(str(out / "timeline.fcpxml"))                    # well-formed
+            readme = (out / "README.md").read_text()
+            self.assertIn("looks/", readme)
+            self.assertIn("fade out 1s", readme)
+            self.assertEqual(json.loads((out / "text" / "titles.json").read_text())[0]["text"], "Hello")
+            doc["tracks"][1]["clips"][0]["src"] = "projects/other/x.mp4"
+            (proj / "edit.json").write_text(json.dumps(doc))
+            with self.assertRaises(ValueError):
+                handoff.build(proj, "9x16", None)
+
+
+def encode_png_1x1() -> bytes:
+    from resolve_assist.imaging.png import encode_png
+    return encode_png(2, 2, [(1.0, 0.5, 0.2)] * 4)
 
 
 if __name__ == "__main__":

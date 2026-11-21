@@ -304,6 +304,15 @@ def new_project(name: str) -> str:
 
 
 @mcp.tool()
+def handoff(project: str, format: str = "9x16") -> str:
+    """Export the project's edit (edit.json, made in the Tibeb editor) as layers into projects/<project>/handoff/:
+    cut picture clips, each text as a transparent .mov, audio stems, .cube looks, timeline.otio/.fcpxml and a
+    README with every clip's start time. Use it when the user wants to keep editing in CapCut, Resolve or
+    another editor. Nothing is flattened; colour and volume are listed, not baked."""
+    return _run(api.handoff, project=project, format=format)
+
+
+@mcp.tool()
 def narrate(project: str, text: str, name: str = "narration", voice: Optional[str] = None, rate: str = "+0%",
             provider: str = "auto") -> str:
     """Script -> narration audio (projects/<project>/voice/<name>.wav) with word timings and cue times

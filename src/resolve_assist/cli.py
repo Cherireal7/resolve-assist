@@ -142,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
     ep.add_argument("--model", default="base")
     ep.add_argument("--language", default="auto")
     ep.add_argument("--no-render", action="store_true")
+    ho = sub.add_parser("handoff", help="export a project's edit as layers for CapCut / Resolve / any editor")
+    ho.add_argument("project")
+    ho.add_argument("--format", default="9x16", choices=("9x16", "16x9"))
+    ho.add_argument("--motion-dir")
     na = sub.add_parser("narrate", help="script file -> narration audio + word and cue timings in a project")
     na.add_argument("project")
     na.add_argument("script", help="text file; blank lines = pauses, {cue} markers before words")
@@ -270,6 +274,8 @@ def main(argv: list[str] | None = None) -> int:
                                 not args.no_render)
             res["plan"] = api.edit_plan(args.project)["plan"]
             _print(res)
+        elif args.cmd == "handoff":
+            _print(api.handoff(args.project, args.format, args.motion_dir))
         elif args.cmd == "narrate":
             from pathlib import Path as _P
             _print(api.narrate(args.project, _P(args.script).read_text(encoding="utf-8"), args.name, args.voice, args.rate, args.provider))

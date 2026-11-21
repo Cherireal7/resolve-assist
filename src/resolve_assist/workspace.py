@@ -99,6 +99,9 @@ animated graphics, text overlays, `npm run make -- <config> --to-resolve`) → t
   state the cost and remaining balance (`higgsfield account status`), and wait for an OK.
   Save results to `library/ai-generated/` and run `library_build` to index them.
 - After adding files to `library/`, run `library_build` so `library_search`/`import_assets` see them.
+- To continue an edit in CapCut or Resolve: `handoff` exports the project's `edit.json` as separate layers
+  (clips, transparent text, stems, looks, OTIO/FCPXML, README). Tell the user it is a rebuild kit, not a
+  CapCut project file.
 - Narration: `narrate` turns a script into voice audio with word and cue timings (put `{cue}` markers
   before the words that should trigger visuals). Tell the user that the natural voices send the script
   text to Microsoft; the local voice does not.

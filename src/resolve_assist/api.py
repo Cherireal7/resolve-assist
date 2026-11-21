@@ -782,6 +782,15 @@ def project_intake(project: str) -> dict:
     return _intake(project)
 
 
+def handoff(project: str, format: str = "9x16", motion_dir: str | None = None) -> dict:
+    """Export a project's edit as separate layers (cut clips, transparent text overlays, audio stems,
+    looks, OTIO/FCPXML timeline, README) into projects/<project>/handoff/ for CapCut, Resolve or any editor."""
+    from .handoff import build
+    from .workspace import new_project as _new
+    md = Path(motion_dir).expanduser() if motion_dir else Path.home() / "Documents" / "Github" / "motion-studio"
+    return build(Path(_new(project)["project"]), format, md if md.is_dir() else None)
+
+
 def narrate(project: str, text: str, name: str = "narration", voice: str | None = None, rate: str = "+0%",
             provider: str = "auto") -> dict:
     """Turn a script into narration audio plus word and cue timings inside the project."""
