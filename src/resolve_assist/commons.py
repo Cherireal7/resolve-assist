@@ -18,6 +18,9 @@ API = "https://commons.wikimedia.org/w/api.php"
 AGENT = "resolve-assist/0.2 (local video tool)"
 MAX_BYTES = 40 * 1024 * 1024
 IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
+# Wikimedia serves anonymous clients only these thumbnail widths, and refuses repeated downloads of
+# full-size originals (HTTP 429). So a download always asks for one of these, below the original's width.
+THUMB_STEPS = (3840, 1920, 1280, 960, 500, 330, 250)
 
 
 def _get(url: str, binary: bool = False, tries: int = 4):
@@ -60,7 +63,7 @@ def search(query: str, limit: int = 12) -> list[dict]:
     """Images matching the words, each with licence, author and a preview URL."""
     q = urllib.parse.urlencode({"action": "query", "format": "json", "generator": "search", "gsrsearch": query, "gsrnamespace": 6,
                                 "gsrlimit": max(1, min(30, int(limit))), "prop": "imageinfo", "iiprop": "url|extmetadata|size|mime",
-                                "iiurlwidth": 480})
+                                "iiurlwidth": 500})
     pages = (_get(f"{API}?{q}").get("query") or {}).get("pages") or {}
     out = [i for i in (_info(p) for p in sorted(pages.values(), key=lambda p: p.get("index", 0))) if i]
     return [i for i in out if i["mime"] in IMAGE_TYPES or i["mime"] in ("image/svg+xml", "image/tiff")]
@@ -71,15 +74,28 @@ def fetch(title: str, dest: Path, width: int = 1920) -> dict:
     title = urllib.parse.unquote(title.strip().rsplit("/", 1)[-1])
     if not title.lower().startswith("file:"):
         title = "File:" + title
-    q = urllib.parse.urlencode({"action": "query", "format": "json", "titles": title, "prop": "imageinfo",
-                                "iiprop": "url|extmetadata|size|mime", "iiurlwidth": max(320, min(4000, int(width)))})
-    pages = (_get(f"{API}?{q}").get("query") or {}).get("pages") or {}
-    info = next((i for i in (_info(p) for p in pages.values()) if i), None)
-    if not info or not info["thumb"]:
-        raise ValueError(f"not found on Wikimedia Commons: {title}")
-    if not urllib.parse.urlparse(info["thumb"]).netloc.endswith("wikimedia.org"):
-        raise ValueError("unexpected download address")
-    data, ctype = _get(info["thumb"], binary=True)
+    info, data, ctype = None, None, ""
+    steps = [s for s in THUMB_STEPS if s <= max(THUMB_STEPS[-1], int(width))]
+    for n, step in enumerate(steps):
+        q = urllib.parse.urlencode({"action": "query", "format": "json", "titles": title, "prop": "imageinfo",
+                                    "iiprop": "url|extmetadata|size|mime", "iiurlwidth": step})
+        pages = (_get(f"{API}?{q}").get("query") or {}).get("pages") or {}
+        info = next((i for i in (_info(p) for p in pages.values()) if i), None)
+        if not info or not info["thumb"]:
+            raise ValueError(f"not found on Wikimedia Commons: {title}")
+        if not urllib.parse.urlparse(info["thumb"]).netloc.endswith("wikimedia.org"):
+            raise ValueError("unexpected download address")
+        last = n + 1 == len(steps)
+        if not last and (info.get("width") or 0) <= step:
+            continue                                  # this step would be the full-size original: take a real thumbnail
+        try:
+            data, ctype = _get(info["thumb"], binary=True, tries=1 if not last else 3)
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or last:
+                raise
+    if data is None:
+        raise RuntimeError("Wikimedia Commons refused the download; try again in a few minutes")
     ext = IMAGE_TYPES.get(ctype)
     if not ext:
         raise ValueError(f"not an image that can be used directly ({ctype})")

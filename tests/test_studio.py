@@ -207,6 +207,28 @@ class NarrationAndCreditTests(unittest.TestCase):
         self.assertEqual(locate("In 1483, a boy was born.", [{"text": "In 1483,"}, {"text": "a"}, {"text": "boy"}]), [0, 9, 11])
         self.assertEqual((language_of("ሰላም world"), language_of("hello")), ("am", "en"))
 
+    def test_commons_download_takes_a_standard_thumbnail_below_the_original(self):
+        import tempfile, urllib.parse
+        from resolve_assist import commons
+        asked = []
+        def fake(url, binary=False, tries=4):
+            if binary:
+                return b"\xff\xd8data", "image/jpeg"
+            step = int(urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["iiurlwidth"][0])
+            asked.append(step)
+            return {"query": {"pages": {"1": {"title": "File:X.jpg", "imageinfo": [{"descriptionurl": "https://commons.wikimedia.org/wiki/File:X.jpg",
+                "mime": "image/jpeg", "width": 1920, "height": 1080, "thumburl": f"https://upload.wikimedia.org/x/{step}px-X.jpg",
+                "extmetadata": {"LicenseShortName": {"value": "CC0"}}}]}}}}
+        real = commons._get
+        commons._get = fake
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                res = commons.fetch("File:X.jpg", Path(d))
+                self.assertTrue(Path(res["path"]).is_file())
+        finally:
+            commons._get = real
+        self.assertEqual(asked, [1920, 1280])          # 1920 would be the original itself, so the next step down is used
+
     def test_commons_metadata_is_reduced_to_licence_facts(self):
         from resolve_assist.commons import _info
         page = {"title": "File:X.jpg", "imageinfo": [{"descriptionurl": "https://commons.wikimedia.org/wiki/File:X.jpg", "mime": "image/jpeg",

@@ -4,6 +4,18 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (picture plates)
+- `tools/plates/`: two macOS helpers (Swift, Apple Vision, offline) that turn a flat picture into the layers
+  a 2.5D picture tile needs. `subject` cuts the subject out and fills the hole behind it (`--roi`,
+  `--fill-black` for round fisheye pictures); `plate` composes background and subject for a frame shape and
+  cuts floating stickers. Not part of the stdlib-only core; build with `tools/plates/build.sh`.
+
+### Fixed
+- `commons` downloads asked for a 1920 px "thumbnail" even when that was the full-size original, which
+  Wikimedia now refuses for anonymous clients (HTTP 429). Downloads take the largest standard thumbnail
+  width below the original and step down if refused; search previews use a standard width too.
+- `narrate` with the online voice retries when the service answers with no audio.
+
 ### Added (studio: bigger library, editor choice, launcher)
 - Library grows from 79 to 350 assets. New generators: `library/sfx_ui.py` and `sfx_cine.py` (71 more
   SFX: interface, sparkle, comedy, transitions, impacts, drum one-shots, tension, quiet ambience beds),

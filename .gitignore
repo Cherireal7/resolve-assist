@@ -10,3 +10,4 @@ dist/
 *.mp4
 *.cube
 samples/private/
+tools/plates/bin/
