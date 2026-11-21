@@ -68,7 +68,18 @@ def _edge(text: str, voice: str, rate: str, out: Path) -> list[dict]:
                 elif ch["type"] == "WordBoundary":
                     words.append({"text": ch["text"], "start": ch["offset"] / 1e7, "end": (ch["offset"] + ch["duration"]) / 1e7})
         return words
-    return asyncio.run(run())
+    last: Exception | None = None
+    for attempt in range(4):                 # the voice service sometimes answers a paragraph with no audio
+        try:
+            words = asyncio.run(run())
+            if out.is_file() and out.stat().st_size > 1000:
+                return words
+            last = RuntimeError("the voice service returned no audio")
+        except Exception as exc:             # network hiccup or an empty reply: try again
+            last = exc
+        import time
+        time.sleep(1.5 * (attempt + 1))
+    raise RuntimeError(f"the online voice did not answer after several tries ({last}). Try again, or use the offline voice.")
 
 
 def _say(text: str, voice: str | None, out: Path) -> list[dict]:
