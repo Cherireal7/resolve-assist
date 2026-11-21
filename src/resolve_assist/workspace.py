@@ -123,6 +123,8 @@ animated graphics, text overlays, `npm run make -- <config> --to-resolve`) → t
   text to Microsoft; the local voice does not.
 - Real pictures: `commons_search` then `commons_add` (licence recorded automatically). Prefer public
   domain / CC0; report attribution and share-alike notes. For anything else use `project_credit`.
+- Pictures with depth: `project_cutout` splits a project picture into subject and filled background
+  (`stills/layers/`); Motion Studio's `DeskStory` photo tiles move the two against each other. macOS only.
 - Talking-head clips: `edit_prep` (cut silences, word transcript) → `edit_plan` with your scene
   recommendations → the user picks scenes in `projects/<name>/prep/plan.html` and pastes the plan back →
   build with Motion Studio's `MinimalStory` → revisions → sound design last. Use the
@@ -345,6 +347,75 @@ def commons_add(project: str, title: str, name_hint: str = "") -> dict:
     elif not got["free"]:
         notes.append("Licence is not clearly free: check the source page before using it.")
     return {**credit, "notes": notes}
+
+
+PLATES_DIR = Path(__file__).resolve().parents[2] / "tools" / "plates"
+
+
+def _plates_tool(name: str) -> Path:
+    """Path of a picture helper (tools/plates), built on first use. macOS only: it uses Apple's Vision framework."""
+    import subprocess
+    if sys.platform != "darwin":
+        raise RuntimeError("subject cut-outs need macOS (they use Apple's Vision framework)")
+    src, exe = PLATES_DIR / f"{name}.swift", PLATES_DIR / "bin" / name
+    if not src.is_file():
+        raise RuntimeError(f"the picture helpers are missing: {src}")
+    if not exe.is_file() or exe.stat().st_mtime < src.stat().st_mtime:
+        if not shutil.which("swiftc"):
+            raise RuntimeError("building the picture helpers needs the Xcode command line tools (run: xcode-select --install)")
+        exe.parent.mkdir(exist_ok=True)
+        done = subprocess.run(["swiftc", "-O", str(src), "-o", str(exe)], capture_output=True, text=True, timeout=600)
+        if done.returncode != 0:
+            raise RuntimeError(f"could not build {name}: {done.stderr.strip()[-400:]}")
+    return exe
+
+
+def _run_subject(picture: Path, out_dir: Path, stem: str, options: list[str]) -> str:
+    import subprocess
+    done = subprocess.run([str(_plates_tool("subject")), str(picture), str(out_dir), stem, *options], capture_output=True, text=True, timeout=300)
+    if done.returncode != 0:
+        raise RuntimeError(done.stderr.strip()[-400:] or "no subject found in the picture")
+    return done.stdout
+
+
+def project_cutout(project: str, file: str, roi: str = "", fill_black: bool = False, pick: str = "all") -> dict:
+    """Cut the subject out of a project picture: writes stills/layers/<name>-fg.png (subject, transparent),
+    -bg.png (subject removed, hole filled in) and -mask.png, with the picture's credit carried over."""
+    proj = Path(new_project(project)["project"])
+    project_index(project)
+    data = json.loads((proj / "project.json").read_text(encoding="utf-8"))
+    entry = next((e for e in data["files"] if e["file"] == file or Path(e["file"]).name == file), None)
+    if entry is None:
+        raise ValueError(f"no such file in the project: {file}")
+    picture = proj / entry["file"]
+    if picture.suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp", ".heic", ".tif", ".tiff"):
+        raise ValueError("a cut-out needs a picture (jpg, png, webp, heic or tiff)")
+    options: list[str] = []
+    if roi:
+        try:
+            box = [float(v) for v in roi.split(",")]
+        except ValueError:
+            box = []
+        if len(box) != 4 or not (0 <= box[0] < box[2] <= 1 and 0 <= box[1] < box[3] <= 1):
+            raise ValueError("roi is x0,y0,x1,y1 as fractions of the picture, for example 0.5,0.3,1,0.95")
+        options += ["--roi", ",".join(f"{v:.4f}" for v in box)]
+    if not re.fullmatch(r"all|\d+(,\d+)*", pick):
+        raise ValueError("pick is 'all' or subject numbers like 1,3")
+    options += ["--pick", pick]
+    if fill_black:
+        options += ["--fill-black", "--black-max", "6", "--fade", "90"]
+    stem = re.sub(r"[^A-Za-z0-9]+", "-", picture.stem).strip("-").lower()[:60] or "picture"
+    out_dir = proj / "stills" / "layers"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    found = [line.strip() for line in _run_subject(picture, out_dir, stem, options).splitlines() if line.startswith("instance")]
+    project_index(project)
+    made = {"subject": f"stills/layers/{stem}-fg.png", "background": f"stills/layers/{stem}-bg.png", "mask": f"stills/layers/{stem}-mask.png"}
+    if any(entry.get(k) for k in CREDIT_KEYS):                   # the layers are the same picture: same licence and author
+        for rel in made.values():
+            project_credit(project, rel, f"made here from {entry['file']}" + (f" ({entry['source']})" if entry.get("source") else ""),
+                           entry.get("license", ""), entry.get("author", ""))
+    return {**made, "found": found, "next": "tools/plates/bin/plate composes these for a frame shape (see tools/plates/README.md); "
+            "Motion Studio DeskStory photo tiles take them as picture.src and picture.fg"}
 
 
 def project_narrate(project: str, text: str, name: str = "narration", voice: str | None = None, rate: str = "+0%",

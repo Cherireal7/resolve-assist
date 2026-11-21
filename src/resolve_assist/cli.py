@@ -173,6 +173,12 @@ def main(argv: list[str] | None = None) -> int:
     cr.add_argument("--source", default="")
     cr.add_argument("--license", default="")
     cr.add_argument("--author", default="")
+    co = sub.add_parser("cutout", help="cut the subject out of a project picture: subject + filled background layers (macOS)")
+    co.add_argument("project")
+    co.add_argument("file")
+    co.add_argument("--roi", default="", help="look only inside x0,y0,x1,y1 (fractions of the picture)")
+    co.add_argument("--fill-black", action="store_true", help="also fill the black surround of a round (fisheye) picture")
+    co.add_argument("--pick", default="all", help="all, or subject numbers like 1,3")
     dc = sub.add_parser("delivery-check", help="is an exported video ready to post? shape, resolution, loudness (JSON)")
     dc.add_argument("path")
     pk = sub.add_parser("peaks", help="waveform outline (and beats) of an audio or video file, as JSON")
@@ -307,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
             _print(api.narrate(args.project, _P(args.script).read_text(encoding="utf-8"), args.name, args.voice, args.rate, args.provider))
         elif args.cmd == "commons":
             _print(api.commons_add(args.add, args.query) if args.add else api.commons_search(args.query))
+        elif args.cmd == "cutout":
+            _print(api.project_cutout(args.project, args.file, args.roi, args.fill_black, args.pick))
         elif args.cmd == "credit":
             _print(api.project_credit(args.project, args.file, args.source, args.license, args.author))
         elif args.cmd == "delivery-check":

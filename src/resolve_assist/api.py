@@ -865,6 +865,12 @@ def project_credit(project: str, file: str, source: str = "", license: str = "",
     return _credit(project, file, source, license, author)
 
 
+def project_cutout(project: str, file: str, roi: str = "", fill_black: bool = False, pick: str = "all") -> dict:
+    """Cut the subject out of a project picture into separate subject and background layers (macOS)."""
+    from .workspace import project_cutout as _cutout
+    return _cutout(project, file, roi, fill_black, pick)
+
+
 def project_kit(project: str, queries: list[str], per_query: int = 1) -> dict:
     """Copy library assets matching each phrase into projects/<project>/kit/ (for CapCut or any editor)."""
     from .workspace import project_kit as _kit

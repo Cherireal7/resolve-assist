@@ -9,6 +9,9 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
   a 2.5D picture tile needs. `subject` cuts the subject out and fills the hole behind it (`--roi`,
   `--fill-black` for round fisheye pictures); `plate` composes background and subject for a frame shape and
   cuts floating stickers. Not part of the stdlib-only core; build with `tools/plates/build.sh`.
+- `project_cutout` (MCP) / `cutout` (CLI): cut the subject out of a project picture into
+  `stills/layers/<name>-fg.png`, `-bg.png` and `-mask.png`, building the helper on first use and carrying the
+  picture's credit over to the layers. Options: `roi`, `fill_black`, `pick`.
 
 ### Fixed
 - `commons` downloads asked for a 1920 px "thumbnail" even when that was the full-size original, which

@@ -229,6 +229,51 @@ class NarrationAndCreditTests(unittest.TestCase):
             commons._get = real
         self.assertEqual(asked, [1920, 1280])          # 1920 would be the original itself, so the next step down is used
 
+    def test_cutout_checks_its_input_and_carries_the_credit_over(self):
+        from resolve_assist import workspace
+        with tempfile.TemporaryDirectory() as d:
+            old = os.environ.get("RESOLVE_ASSIST_OUTPUT")
+            os.environ["RESOLVE_ASSIST_OUTPUT"] = d
+            try:
+                proj = Path(workspace.new_project("Cut Test")["project"])
+                self.assertTrue(str(proj.resolve()).startswith(str(Path(d).resolve())))   # never the real workspace
+                (proj / "stills" / "cat.png").write_bytes(b"\x89PNG fake")
+                (proj / "docs" / "notes.txt").write_text("x")
+                workspace.project_index("Cut Test")
+                workspace.project_credit("Cut Test", "stills/cat.png", "https://example.org/cat", "CC0", "A. Author")
+                with self.assertRaises(ValueError):
+                    workspace.project_cutout("Cut Test", "missing.png")
+                with self.assertRaises(ValueError):
+                    workspace.project_cutout("Cut Test", "notes.txt")
+                with self.assertRaises(ValueError):
+                    workspace.project_cutout("Cut Test", "cat.png", roi="0.9,0,0.1,1")
+                with self.assertRaises(ValueError):
+                    workspace.project_cutout("Cut Test", "cat.png", pick="1;rm")
+                seen = {}
+                def fake(picture, out_dir, stem, options):
+                    seen["options"] = options
+                    for part in ("fg", "bg", "mask"):
+                        (out_dir / f"{stem}-{part}.png").write_bytes(b"\x89PNG fake")
+                    return "instance 1: 40.0% of the frame, box x 0.10-0.90 y 0.20-1.00\nwrote\n"
+                real = workspace._run_subject
+                workspace._run_subject = fake
+                try:
+                    res = workspace.project_cutout("Cut Test", "cat.png", roi="0.5,0.3,1,0.95", fill_black=True)
+                finally:
+                    workspace._run_subject = real
+                self.assertEqual(res["subject"], "stills/layers/cat-fg.png")
+                self.assertEqual(len(res["found"]), 1)
+                self.assertIn("--fill-black", seen["options"])
+                self.assertEqual(seen["options"][:2], ["--roi", "0.5000,0.3000,1.0000,0.9500"])
+                data = json.loads((proj / "project.json").read_text())
+                layer = next(e for e in data["files"] if e["file"] == "stills/layers/cat-fg.png")
+                self.assertEqual((layer["license"], layer["author"]), ("CC0", "A. Author"))
+            finally:
+                if old is None:
+                    os.environ.pop("RESOLVE_ASSIST_OUTPUT", None)
+                else:
+                    os.environ["RESOLVE_ASSIST_OUTPUT"] = old
+
     def test_commons_metadata_is_reduced_to_licence_facts(self):
         from resolve_assist.commons import _info
         page = {"title": "File:X.jpg", "imageinfo": [{"descriptionurl": "https://commons.wikimedia.org/wiki/File:X.jpg", "mime": "image/jpeg",

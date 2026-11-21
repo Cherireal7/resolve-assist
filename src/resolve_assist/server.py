@@ -368,6 +368,16 @@ def project_credit(project: str, file: str, source: str = "", license: str = "",
 
 
 @mcp.tool()
+def project_cutout(project: str, file: str, roi: str = "", fill_black: bool = False, pick: str = "all") -> str:
+    """Cut the subject (a person, an animal, an object) out of a project picture so it can move in front of
+    its own background: writes stills/layers/<name>-fg.png (subject, transparent), -bg.png (subject painted
+    out) and -mask.png, with the picture's credit carried over. macOS only, offline. roi = "x0,y0,x1,y1"
+    (fractions) limits where to look when too much is grabbed; fill_black also fills the black surround of a
+    round fisheye picture; pick = "1,3" keeps only those subjects (the result lists what was found)."""
+    return _run(api.project_cutout, project=project, file=file, roi=roi, fill_black=fill_black, pick=pick)
+
+
+@mcp.tool()
 def project_intake(project: str) -> str:
     """Sort whatever the user dropped into projects/<project>/inbox/ (footage, photos, map images, voice,
     music, references, scripts) into typed folders and refresh project.json: every file with kind,
