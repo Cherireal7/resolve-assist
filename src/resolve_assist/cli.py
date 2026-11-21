@@ -173,6 +173,8 @@ def main(argv: list[str] | None = None) -> int:
     cr.add_argument("--source", default="")
     cr.add_argument("--license", default="")
     cr.add_argument("--author", default="")
+    dc = sub.add_parser("delivery-check", help="is an exported video ready to post? shape, resolution, loudness (JSON)")
+    dc.add_argument("path")
     pk = sub.add_parser("peaks", help="waveform outline (and beats) of an audio or video file, as JSON")
     pk.add_argument("path")
     pk.add_argument("--per-second", type=int, default=40)
@@ -307,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:
             _print(api.commons_add(args.add, args.query) if args.add else api.commons_search(args.query))
         elif args.cmd == "credit":
             _print(api.project_credit(args.project, args.file, args.source, args.license, args.author))
+        elif args.cmd == "delivery-check":
+            _print(api.delivery_check(args.path))
         elif args.cmd == "peaks":
             print(json.dumps(api.media_peaks(args.path, args.per_second, args.beats)))
         elif args.cmd == "look-curves":

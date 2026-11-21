@@ -304,6 +304,13 @@ def new_project(name: str) -> str:
 
 
 @mcp.tool()
+def delivery_check(path: str) -> str:
+    """Check an exported video before posting: shape (9:16, 16:9…), resolution, sound, loudness (target about
+    -14 LUFS), peaks and length, each with a fix when it fails."""
+    return _run(api.delivery_check, path=path)
+
+
+@mcp.tool()
 def capcut_draft(project: str, native_text: bool = True) -> str:
     """EXPERIMENTAL: after `handoff`, write a new CapCut desktop project ("Tibeb <project>") with every clip on
     its own track. Titles become editable CapCut text (plain look) unless native_text is false. Only new

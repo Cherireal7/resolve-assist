@@ -515,6 +515,39 @@ def analyze_music(path: str) -> dict:
         shutil.rmtree(tmp.parent, ignore_errors=True)
 
 
+def delivery_check(path: str) -> dict:
+    """Is an exported video ready to post? Size, length, sound level and simple pass/fail checks."""
+    import re as _re
+    import subprocess
+    from .analysis.video import probe
+    p = check_input_media(path)
+    info = probe(p)
+    w, h, dur = int(info.get("width") or 0), int(info.get("height") or 0), float(info.get("duration") or 0)
+    lufs = peak = None
+    ff = find_ffmpeg()
+    if ff and info.get("has_audio"):
+        proc = subprocess.run([ff, "-nostdin", "-hide_banner", "-nostats", "-protocol_whitelist", "file", "-i", "file:" + str(p), "-vn",
+                               "-af", "loudnorm=print_format=json", "-f", "null", "-"], capture_output=True, timeout=900, check=False)
+        text = proc.stderr.decode("utf-8", "replace")
+        m = _re.search(r'"input_i"\s*:\s*"(-?[\d.]+|-inf)".*?"input_tp"\s*:\s*"(-?[\d.]+|-inf)"', text, _re.S)
+        if m and "inf" not in m.group(1):
+            lufs, peak = float(m.group(1)), (float(m.group(2)) if "inf" not in m.group(2) else None)
+    ratio = w / h if h else 0
+    shape = "9:16" if abs(ratio - 9 / 16) < 0.02 else "16:9" if abs(ratio - 16 / 9) < 0.02 else "1:1" if abs(ratio - 1) < 0.02 else "4:5" if abs(ratio - 0.8) < 0.02 else "other"
+    checks = [
+        {"check": "Shape", "ok": shape != "other", "detail": f"{w}x{h} ({shape})", "fix": "Export as 9:16 for Reels/TikTok/Shorts or 16:9 for YouTube."},
+        {"check": "Resolution", "ok": min(w, h) >= 1080, "detail": f"{min(w, h)}p", "fix": "Export at 1080 pixels on the short side or more."},
+        {"check": "Sound", "ok": bool(info.get("has_audio")), "detail": "has sound" if info.get("has_audio") else "silent", "fix": "Add voice or music, or post it knowingly without sound."},
+        {"check": "Loudness", "ok": lufs is not None and -16.0 <= lufs <= -12.0, "detail": f"{lufs} LUFS" if lufs is not None else "not measured",
+         "fix": "Social platforms expect about -14 LUFS. Re-export (the renderer normalises to -14) or adjust the volume."},
+        {"check": "Peaks", "ok": peak is None or peak <= -0.9, "detail": f"{peak} dBTP" if peak is not None else "not measured", "fix": "Lower the volume slightly: peaks above -1 dB can distort after upload."},
+    ]
+    if shape == "9:16":
+        checks.append({"check": "Shorts length", "ok": dur <= 180, "detail": f"{dur:.1f} s", "fix": "Vertical platforms favour clips under 3 minutes; many placements need 60 or 90 s."})
+    return {"file": str(p), "width": w, "height": h, "shape": shape, "duration": round(dur, 2), "fps": info.get("fps"), "lufs": lufs, "true_peak": peak,
+            "megabytes": round(p.stat().st_size / 1e6, 1), "ready": all(c["ok"] for c in checks), "checks": checks}
+
+
 def media_peaks(path: str, per_second: int = 40, beats: bool = False) -> dict:
     """Loudness outline of an audio file or a video's soundtrack (values 0..1, `per_second` of them per
     second) for drawing waveforms, plus tempo and beat times when asked. Cached per file version."""
