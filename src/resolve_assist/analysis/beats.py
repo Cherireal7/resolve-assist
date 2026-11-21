@@ -118,13 +118,17 @@ def beat_grid(env: list[float], fps: float, bpm: float) -> tuple[list[float], li
     return beats, beats[first::4]
 
 
-def analyze_audio(path: Path) -> dict:
+def analyze_audio(path: Path, bpm_hint: float | None = None) -> dict:
+    """bpm_hint: a tempo known from elsewhere (library tracks carry theirs). Syncopated grooves can
+    fool the detector into 2/3 or half tempo, so a known tempo wins and only the phase is searched."""
     samples, rate = read_wav_mono(path)
     duration = len(samples) / rate
     x = resample(samples, rate)
     env = onset_envelope(x)
     fps = ANALYSIS_RATE / HOP
     bpm, conf = tempo(env, fps)
+    if bpm_hint and 40.0 <= bpm_hint <= 240.0:
+        bpm, conf = float(bpm_hint), 1.0
     beats, downbeats = beat_grid(env, fps, bpm) if bpm else ([], [])
     return {"duration": round(duration, 3), "bpm": round(bpm, 2), "confidence": round(conf, 2),
             "beats": [round(b, 3) for b in beats], "downbeats": [round(b, 3) for b in downbeats]}

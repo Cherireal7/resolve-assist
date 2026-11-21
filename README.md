@@ -13,6 +13,20 @@ It works with Claude (or any MCP client) or from the command line.
 > (dry run first, separate grade version, one-step undo). Built for Resolve Free 21.2 (App Store build); live test in progress.
 > See [PROJECT.md](PROJECT.md) for goals, architecture, security and roadmap.
 
+## One word to start
+
+```bash
+scripts/install-launcher.sh      # once: installs the `studio` command and ~/Applications/Studio.app
+studio                           # opens your editor and Claude in the workspace
+studio capcut                    # same, for a CapCut session (no Resolve needed)
+studio help                      # new, open, library, find, kit, motion, make, fonts, doctor, editor
+```
+
+The editor is optional. Resolve gets live control through the bridge; CapCut (or any editor) gets files:
+`studio kit "My Video" whoosh "warm light leak 9:16" "uplift music"` copies matching library assets into
+`projects/My Video/kit/` to import. `studio library` opens the asset browser (350 generated, free-to-use
+assets: SFX, music, overlays, transitions, backgrounds, textures, LUTs, plus graphics and typefaces).
+
 ## Install
 
 ```bash
@@ -61,6 +75,18 @@ resolve-assist undo
 resolve-assist bridge-stop
 ```
 
+## Record source footage with OBS
+
+OBS Studio records the raw material (app screen, talking head, voiceover) straight into the library
+(`library/footage/obs`), controlled over obs-websocket v5. Setup, macOS permissions and examples:
+[docs/OBS.md](docs/OBS.md).
+
+```bash
+resolve-assist obs-status
+resolve-assist obs-record --scene "Talking head"
+resolve-assist obs-stop          # prints the .mp4 and indexes it for `import`
+```
+
 ## CLI
 
 ```bash
@@ -91,6 +117,8 @@ resolve-assist probe-report
 | `analyze_clip` | Grab a frame from Resolve and analyze it |
 | `apply_grade` | Apply CDL (or a look via LUT) to a clip: dry run unless `confirm=true` |
 | `undo_grade` | Restore the clip's previous grade version |
+| `obs_status` / `obs_list_scenes` / `obs_switch_scene` | OBS: connection, scenes, recording state |
+| `obs_start_recording` / `obs_stop_recording` | Record in OBS; stop returns the file and indexes it for `import_assets` |
 
 ## Development
 
@@ -99,6 +127,6 @@ resolve-assist probe-report
 ```
 
 Docs: [PROJECT.md](PROJECT.md) · [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) ·
-[docs/TESTING.md](docs/TESTING.md) · [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)
+[docs/TESTING.md](docs/TESTING.md) · [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) · [docs/OBS.md](docs/OBS.md)
 
 MIT licensed. Not affiliated with Blackmagic Design.

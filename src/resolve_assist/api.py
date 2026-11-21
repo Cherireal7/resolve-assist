@@ -502,16 +502,30 @@ def analyze_music(path: str) -> dict:
     from .analysis.video import extract_audio
     from .paths import check_input_audio
     p = check_input_audio(path)
+    hint = _library_bpm(p)
     if p.suffix.lower() == ".wav":
         try:
-            return analyze_audio(p)
+            return analyze_audio(p, hint)
         except ValueError:
             pass  # not 16-bit: decode through ffmpeg below
     tmp = extract_audio(p)
     try:
-        return analyze_audio(tmp)
+        return analyze_audio(tmp, hint)
     finally:
         shutil.rmtree(tmp.parent, ignore_errors=True)
+
+
+def _library_bpm(p: Path) -> float | None:
+    """Tempo of a generated library track (stored in the manifest when it was built)."""
+    from .library.build import library_dir, load_manifest
+    try:
+        rel = str(p.resolve().relative_to(library_dir().resolve()))
+    except ValueError:
+        return None
+    for it in load_manifest().get("items", []):
+        if it.get("file") == rel and it.get("bpm"):
+            return float(it["bpm"])
+    return None
 
 
 def beat_edit_plan(videos: list[str], music: str, beats_per_cut: int = 2, order: str = "match",
@@ -638,6 +652,35 @@ def captions_for_timeline(model: str = "base", language: str = "auto", max_chars
     return result
 
 
+# --------------------------------------------------------------------------- OBS (recording source footage)
+
+def obs_status() -> dict:
+    """Is OBS reachable? Current scene, recording on/off, where recordings go."""
+    from .obs import status
+    return status()
+
+
+def obs_scenes() -> dict:
+    from .obs import list_scenes
+    return list_scenes()
+
+
+def obs_switch_scene(name: str) -> dict:
+    from .obs import switch_scene
+    return switch_scene(name)
+
+
+def obs_start_recording(scene: str | None = None) -> dict:
+    from .obs import start_recording
+    return start_recording(scene)
+
+
+def obs_stop_recording(refresh_library: bool = True) -> dict:
+    """Stop, wait for the finished file, and index it in the library for import_assets."""
+    from .obs import stop_recording
+    return stop_recording(refresh_library=refresh_library)
+
+
 # --------------------------------------------------------------------------- workspace
 
 def doctor() -> dict:
@@ -648,6 +691,49 @@ def doctor() -> dict:
 def init_workspace() -> dict:
     from .workspace import init_workspace as _init
     return _init()
+
+
+def _prep_dir(project: str) -> Path:
+    from .workspace import new_project as _new
+    return Path(_new(project)["project"]) / "prep"
+
+
+def edit_prep(video: str, project: str, min_silence: float = 0.4, padding: float = 0.03, model: str = "base",
+              language: str = "auto", render: bool = True) -> dict:
+    """Prepare a talking-head clip: word-level transcript, silences cut (padding kept on both sides),
+    tightened video and script segments, written to projects/<project>/prep/."""
+    from .editprep import SCENE_TYPES, prepare
+    if not 0.15 <= min_silence <= 5 or not 0 <= padding <= 0.5:
+        raise ValueError("min_silence must be 0.15..5 s and padding 0..0.5 s")
+    res = prepare(check_input_media(video), _prep_dir(project), min_silence, padding, model, language, render)
+    return {**res, "scene_types": SCENE_TYPES,
+            "next": "Recommend 1-3 scene types per segment, then call edit_plan with them."}
+
+
+def edit_plan(project: str, recommendations: dict | None = None) -> dict:
+    """Write projects/<project>/prep/plan.html from the latest edit_prep: clip and script on the right,
+    a scene choice and notes per segment on the left, and a 'Copy plan' button."""
+    from .editprep import plan_page
+    d = _prep_dir(project)
+    preps = sorted(d.glob("*.prep.json"), key=lambda f: f.stat().st_mtime)
+    if not preps:
+        raise ValueError("run edit_prep for this project first")
+    data = json.loads(preps[-1].read_text(encoding="utf-8"))
+    out = plan_page(d / "plan.html", Path(data["video"]), data["segments"], recommendations, f"Edit plan: {project}")
+    return {"plan": str(out), "segments": len(data["segments"]),
+            "next": "Open the page, choose a scene per segment, press Copy plan and paste it back."}
+
+
+def project_intake(project: str) -> dict:
+    """Sort projects/<project>/inbox/ into typed folders and refresh project.json (the project index)."""
+    from .workspace import project_intake as _intake
+    return _intake(project)
+
+
+def project_kit(project: str, queries: list[str], per_query: int = 1) -> dict:
+    """Copy library assets matching each phrase into projects/<project>/kit/ (for CapCut or any editor)."""
+    from .workspace import project_kit as _kit
+    return _kit(project, queries, per_query)
 
 
 def new_project(name: str) -> dict:

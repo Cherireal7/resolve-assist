@@ -6,6 +6,7 @@
 | macOS | dev machine | sips fallback available |
 | Linux | CI | ffmpeg or built-in PNG decoder |
 | Resolve Free 21.2.0.6 (macOS, App Store) | probe v2 run 2026-11-16 | Sandboxed; color API present; see below |
+| OBS Studio 33.0.1 (Homebrew cask), obs-websocket 5.7.6, RPC 1 | live 2026-11-21 | status, scenes, switch, record/stop (Hybrid MP4, H.264 1080×1920 30 fps); see docs/OBS.md |
 
 ## Mac App Store build (found 2026-11-16)
 

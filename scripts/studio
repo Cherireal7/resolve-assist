@@ -1,0 +1,99 @@
+#!/bin/zsh
+# tibeb (alias: studio): one word to start a video session. Run `tibeb help`.
+# Config: ~/.config/studio/config (editor=resolve|capcut|none, optional workspace=, motion=, assist=).
+set -u
+CONF="$HOME/.config/studio/config"
+conf() { [[ -f "$CONF" ]] && sed -n "s/^$1=//p" "$CONF" | tail -1; }
+WORKSPACE="${RESOLVE_ASSIST_OUTPUT:-$(conf workspace)}"; WORKSPACE="${WORKSPACE:-$HOME/Documents/resolve-assist}"
+MOTION="$(conf motion)"; MOTION="${MOTION:-$HOME/Documents/Github/motion-studio}"
+ASSIST="$(conf assist)"; ASSIST="${ASSIST:-$HOME/Documents/Github/resolve-assist}"
+RA="$ASSIST/.venv/bin/resolve-assist"
+EDITOR_APP="${STUDIO_EDITOR:-$(conf editor)}"; EDITOR_APP="${EDITOR_APP:-resolve}"
+
+say() { print -r -- "$@"; }
+need_ra() { [[ -x "$RA" ]] || { say "resolve-assist is not installed at $ASSIST (.venv missing). See its README."; exit 1; }; }
+set_editor() {
+  case "$1" in resolve|capcut|none) ;; *) say "Editor must be: resolve, capcut or none"; exit 2;; esac
+  mkdir -p "${CONF:h}"; touch "$CONF"
+  { grep -v '^editor=' "$CONF"; print "editor=$1"; } > "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+  EDITOR_APP="$1"; say "Default editor: $1"
+}
+open_editor() {
+  case "$EDITOR_APP" in
+    resolve) open -a "DaVinci Resolve" 2>/dev/null || say "DaVinci Resolve is not installed (use: studio editor capcut)"
+             say "Resolve: open your project, then Workspace → Scripts → Utility → resolve-assist Bridge." ;;
+    capcut)  open -a "CapCut" 2>/dev/null || say "CapCut is not installed"
+             say "CapCut: assets arrive as files. Ask for a kit, then Import → projects/<name>/kit." ;;
+    none)    say "No editor opened (file-only session)." ;;
+  esac
+}
+
+cmd="${1:-start}"; [[ $# -gt 0 ]] && shift
+case "$cmd" in
+  start|resolve|capcut|none)
+    [[ "$cmd" != start ]] && EDITOR_APP="$cmd"            # one-off choice: `studio capcut`
+    need_ra; "$RA" workspace >/dev/null 2>&1
+    open_editor
+    cd "$WORKSPACE" || exit 1
+    command -v claude >/dev/null || { say "Claude Code is not on PATH. Workspace: $WORKSPACE"; exit 1; }
+    STUDIO_EDITOR="$EDITOR_APP" exec claude "$@" ;;
+  editor)
+    if [[ $# -eq 0 ]]; then say "Default editor: $EDITOR_APP   (change: studio editor resolve|capcut|none)"; else set_editor "$1"; fi ;;
+  new)
+    [[ $# -ge 1 ]] || { say 'Usage: studio new "Project name"'; exit 2; }
+    need_ra; "$RA" new-project "$*" >/dev/null && "$RA" intake "$*" >/dev/null
+    say "Created projects/$*. Drop footage, photos, maps, voice and references into its inbox, then: studio add \"$*\""
+    open "$WORKSPACE/projects/$*/inbox" ;;
+  add)
+    [[ $# -ge 1 ]] || { say 'Usage: studio add "Project" [files…]   (files are copied into the inbox, then sorted and indexed)'; exit 2; }
+    need_ra; proj="$1"; shift
+    "$RA" new-project "$proj" >/dev/null
+    for f in "$@"; do cp -Rn "$f" "$WORKSPACE/projects/$proj/inbox/" || say "Could not copy $f"; done
+    "$RA" intake "$proj" ;;
+  open)
+    if [[ $# -eq 0 ]]; then say "Projects:"; ls -1 "$WORKSPACE/projects" 2>/dev/null; open "$WORKSPACE/projects"
+    else open "$WORKSPACE/projects/$*" 2>/dev/null || { say "No project '$*'. Projects:"; ls -1 "$WORKSPACE/projects"; exit 1; }; fi ;;
+  library)
+    need_ra
+    if [[ "${1:-}" == build ]]; then "$RA" library; fi
+    [[ -f "$WORKSPACE/library/index.html" ]] || "$RA" library >/dev/null
+    open "$WORKSPACE/library/index.html" ;;
+  find)   need_ra; "$RA" assets "$*" ;;
+  kit)
+    [[ $# -ge 2 ]] || { say 'Usage: studio kit "Project" whoosh "warm light leak 9:16" "uplift music"'; exit 2; }
+    need_ra; "$RA" kit "$@" && open "$WORKSPACE/projects/$1/kit" ;;
+  prep)
+    [[ $# -ge 2 ]] || { say 'Usage: studio prep <video file> "Project"   (cuts silences, makes the planning page)'; exit 2; }
+    need_ra; v="$1"; shift; "$RA" prep "$v" "$*" && open "$WORKSPACE/projects/$*/prep/plan.html" ;;
+  motion) cd "$MOTION" && exec npm run dev ;;
+  make)
+    [[ $# -ge 1 ]] || { say "Usage: studio make examples/<config>.json [--to-resolve]"; exit 2; }
+    cd "$MOTION" && exec npm run make -- "$@" ;;
+  fonts)
+    src="$WORKSPACE/library/fonts"; dst="$HOME/Library/Fonts"; n=0
+    for f in "$src"/**/*.(ttf|otf)(N); do
+      [[ -e "$dst/${f:t}" ]] || { cp "$f" "$dst/" && n=$((n + 1)); }
+    done
+    say "Installed $n new font file(s) into ~/Library/Fonts (from $src). Restart your editor to see them." ;;
+  doctor) need_ra; "$RA" doctor ;;
+  help|-h|--help)
+    cat <<TXT
+studio                       start a session: opens your editor ($EDITOR_APP) and Claude in the workspace
+studio capcut | resolve | none   same, with a one-off editor choice
+studio editor [name]         show or set the default editor (resolve, capcut, none)
+studio new "Name"            create projects/<Name>/ (footage, music, stills, exports, captions, kit)
+studio add "Name" [files…]  sort the project inbox (plus any files given) into folders and index them
+studio open [Name]           open a project folder in Finder (no name: list them)
+studio library [build]       open the asset browser (build: regenerate/index first)
+studio find <words>          search the library from the terminal
+studio kit "Name" <words>…   copy matching assets into projects/<Name>/kit (for CapCut)
+studio prep <video> "Name"   talking-head clip: cut silences, transcript, open the planning page
+studio motion                open Motion Studio (Remotion) for graphics and text templates
+studio make <config.json>    render a Motion Studio config (add --to-resolve to file it in the library)
+studio fonts                 install the library typefaces into ~/Library/Fonts
+studio doctor                check the whole setup
+Workspace: $WORKSPACE
+TXT
+    ;;
+  *) say "Unknown command '$cmd'. Try: studio help"; exit 2 ;;
+esac

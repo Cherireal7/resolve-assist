@@ -20,7 +20,9 @@ mcp = FastMCP(
         "measure frames yourself, apply_grade to change a clip (ALWAYS dry run first, show the "
         "plan and a preview, and only call with confirm=true after the user agrees), and "
         "undo_grade to restore. Never claim a change happened unless apply_grade returned applied=true. "
-        "Report confidence and warnings honestly."
+        "Report confidence and warnings honestly. "
+        "Recording source footage (OBS): obs_status first; obs_start_recording only when the user asks "
+        "to record; obs_stop_recording returns the file and indexes it for import_assets."
     ),
 )
 
@@ -131,8 +133,11 @@ def stabilize_clip(target: str = "current") -> str:
 
 @mcp.tool()
 def make_music(preset: str = "calm-lofi", seconds: Optional[float] = None) -> str:
-    """Create royalty-free background music (presets: calm-lofi, bright-pop, ambient) in the media
-    folder, as long as the timeline by default. Then use add_music with the returned file name."""
+    """Create royalty-free background music of any length in the media folder (as long as the timeline
+    by default). Presets: calm-lofi, bright-pop, house-groove, cinematic-pulse, ambient, uplift-corporate,
+    fast-cut-energy, chill-house, lofi-keys, trap-bounce, synthwave-drive, afro-groove, dembow-heat,
+    funk-pop, acoustic-warm, piano-emotional, explainer-pulse, trailer-epic, deep-focus, ethio-tizita,
+    ethio-ambassel, ethio-bati-jazz. Then use add_music with the returned file name."""
     return _run(api.make_music, preset=preset, seconds=seconds)
 
 
@@ -193,7 +198,8 @@ def library_build(force: bool = False) -> str:
 
 @mcp.tool()
 def library_search(query: str = "", category: Optional[str] = None, limit: int = 20) -> str:
-    """Search the asset library by words. Categories: sfx, music, luts, overlays, backgrounds,
+    """Search the asset library by words ('9:16' finds vertical versions). Categories: sfx, music, luts,
+    overlays, backgrounds, textures, graphics, fonts, footage,
     transitions. Each result says how to use it (e.g. Composite Mode: Screen)."""
     return _run(api.library_search, query=query, category=category, limit=limit)
 
@@ -251,6 +257,39 @@ def build_edit(segments: list[dict], title: str = "Edit", music: Optional[str] =
 
 
 @mcp.tool()
+def obs_status() -> str:
+    """OBS Studio (recording source footage): connected?, current scene, recording on/off, where
+    recordings go. Works when OBS is off too (connected=false with the fix)."""
+    return _run(api.obs_status)
+
+
+@mcp.tool()
+def obs_list_scenes() -> str:
+    """List OBS scenes in the order of the OBS Scenes dock, and the current one."""
+    return _run(api.obs_scenes)
+
+
+@mcp.tool()
+def obs_switch_scene(name: str) -> str:
+    """Switch OBS to a scene by name (e.g. 'App screen', 'Talking head', 'Voiceover')."""
+    return _run(api.obs_switch_scene, name=name)
+
+
+@mcp.tool()
+def obs_start_recording(scene: Optional[str] = None) -> str:
+    """Start recording in OBS (switching to scene first if given). Only when the user asked to record:
+    it captures their screen/camera/mic. Files go to ~/Documents/resolve-assist/library/footage/obs."""
+    return _run(api.obs_start_recording, scene=scene)
+
+
+@mcp.tool()
+def obs_stop_recording(refresh_library: bool = True) -> str:
+    """Stop the OBS recording, wait until the file is finished and return its path. With
+    refresh_library the clip is indexed so import_assets can bring it into Resolve."""
+    return _run(api.obs_stop_recording, refresh_library=refresh_library)
+
+
+@mcp.tool()
 def doctor() -> str:
     """Check the whole setup (Resolve, bridge version, ffmpeg, whisper, library, Claude connection)
     and return exact fixes. Run this when something doesn't work."""
@@ -260,8 +299,43 @@ def doctor() -> str:
 @mcp.tool()
 def new_project(name: str) -> str:
     """Create ~/Documents/resolve-assist/projects/<name>/ with footage, music, stills, exports,
-    captions folders and a notes.md checklist."""
+    captions, kit folders and a notes.md checklist."""
     return _run(api.new_project, name=name)
+
+
+@mcp.tool()
+def project_intake(project: str) -> str:
+    """Sort whatever the user dropped into projects/<project>/inbox/ (footage, photos, map images, voice,
+    music, references, scripts) into typed folders and refresh project.json: every file with kind,
+    duration and dimensions. Read project.json and brief.md instead of probing files again."""
+    return _run(api.project_intake, project=project)
+
+
+@mcp.tool()
+def edit_prep(video: str, project: str, min_silence: float = 0.4, padding: float = 0.03, model: str = "base",
+              language: str = "auto", render: bool = True) -> str:
+    """Prepare a talking-head clip for editing (no Resolve needed): word-by-word transcript, silences
+    removed with `padding` seconds kept on each side (0.03 = 30 ms), a tightened video, and the script
+    split into short segments. Results go to projects/<project>/prep/. Follow with edit_plan."""
+    return _run(api.edit_prep, video=video, project=project, min_silence=min_silence, padding=padding,
+                model=model, language=language, render=render)
+
+
+@mcp.tool()
+def edit_plan(project: str, recommendations: Optional[dict] = None) -> str:
+    """Create the planning page for the latest edit_prep of a project. recommendations maps a segment id
+    to scene type ids, best first, e.g. {"2": ["graph", "line-text"]}. Rule of thumb: stay on the speaker
+    ('aroll') when a new idea is announced, show a visual when it is described. The user picks scenes in
+    the page and pastes the copied plan back; build only after that."""
+    return _run(api.edit_plan, project=project, recommendations=recommendations)
+
+
+@mcp.tool()
+def project_kit(project: str, queries: list[str], per_query: int = 1) -> str:
+    """Copy the best library match for each search phrase (e.g. 'whoosh', 'warm light leak 9:16',
+    'uplift music') into projects/<project>/kit/. Use this instead of import_assets when the user edits
+    in CapCut or any editor without the Resolve bridge: they import that one folder."""
+    return _run(api.project_kit, project=project, queries=queries, per_query=per_query)
 
 
 def main() -> None:

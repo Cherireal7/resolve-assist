@@ -4,6 +4,41 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (studio: bigger library, editor choice, launcher)
+- Library grows from 79 to 350 assets. New generators: `library/sfx_ui.py` and `sfx_cine.py` (71 more
+  SFX: interface, sparkle, comedy, transitions, impacts, drum one-shots, tension, quiet ambience beds),
+  `sequencer.py` + 17 sequenced music presets (incl. three Ethiopian-scale ones) next to the 5 pad presets,
+  `images_more.py` (mesh/grainy/spotlight backgrounds, paper/halftone/grid/stripe/sunburst textures,
+  caption bar, scrims, safe-zone guide, frames, scan lines) and 9x16 versions of every overlay and
+  transition clip. Shared helpers in `dsp.py` (biquad, reverb, plucked string).
+- Library indexes `graphics/` and `fonts/` (from Motion Studio) and the `user-sfx`, `user-music`,
+  `user-footage` folders. `library/index.html`: an offline browser page (search, listen, preview, copy path).
+- The editor is optional: `~/.config/studio/config` (`editor=resolve|capcut|none`, or `STUDIO_EDITOR`).
+  `doctor` skips Resolve/bridge checks for CapCut; the workspace guide covers both editors.
+- `project_kit` (MCP) / `kit` (CLI): copy the best library match per phrase into `projects/<name>/kit/`
+  for editors without a bridge. Projects get a `kit/` folder.
+- `scripts/studio` + `scripts/install-launcher.sh`: one-word launcher (`studio`, `studio capcut`, `new`,
+  `open`, `library`, `find`, `kit`, `motion`, `make`, `fonts`, `doctor`) and a clickable `Studio.app`.
+- `edit_prep` / `edit_plan` (MCP), `prep` (CLI), `editprep.py`: talking-head preparation without Resolve:
+  word-by-word transcript, silences cut with padding (default 30 ms), tightened clip, script segments,
+  and `prep/plan.html` (clip + script, a scene type and notes per segment, "Copy plan").
+- `project_intake` (MCP), `intake` (CLI), `studio add`: files dropped into `projects/<name>/inbox/` are
+  sorted into footage, stills, maps, refs, voice, music, docs (never overwritten) and indexed in
+  `project.json` (kind, duration, dimensions; unchanged files are not measured again). Each project
+  gets a `brief.md` with a decisions log. The workspace guide tells the AI to read these first.
+- `analyze_music` uses the tempo stored for generated library tracks (syncopated presets can read as
+  2/3 or half tempo otherwise). `make-music` accepts every preset.
+
+### Added (OBS recording)
+- `obs.py`: stdlib obs-websocket v5 client (RFC 6455 framing, SHA-256 challenge auth, clean close)
+  with the password read from `~/.config/obs-websocket/password`, never from tool input or output.
+- MCP `obs_status`, `obs_list_scenes`, `obs_switch_scene`, `obs_start_recording`, `obs_stop_recording`;
+  CLI `obs-status`, `obs-scenes`, `obs-scene`, `obs-record`, `obs-stop`. Stop waits for the finished file
+  (also the remuxed .mp4 of MKV recordings) and indexes it so `import_assets` can bring it into Resolve.
+- Library indexes `library/footage/obs/` (category `footage`); `refresh_index()` re-scans only the user
+  folders without regenerating assets. `doctor` reports OBS (informational).
+- docs/OBS.md: profile, scenes, permissions, usage. Tests against a fake obs-websocket server.
+
 ### Added (pipeline)
 - Library indexes `library/motion/` (Motion Studio renders, .mov = transparent) and
   `library/ai-generated/` (Higgsfield) so they can be searched and imported into Resolve.

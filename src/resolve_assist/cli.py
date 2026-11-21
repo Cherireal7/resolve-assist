@@ -74,7 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("stabilize", help="run Resolve's stabilizer on a clip")
     st.add_argument("target", nargs="?", default="current")
     mm = sub.add_parser("make-music", help="generate royalty-free preset music")
-    mm.add_argument("--preset", default="calm-lofi", choices=("calm-lofi", "bright-pop", "ambient"))
+    from .audio import PRESETS as _music_presets
+    mm.add_argument("--preset", default="calm-lofi", choices=tuple(_music_presets))
     mm.add_argument("--seconds", type=float)
     mu = sub.add_parser("music", help="add music from ~/Documents/resolve-assist/media (on a timeline copy)")
     mu.add_argument("file")
@@ -123,7 +124,29 @@ def main(argv: list[str] | None = None) -> int:
     ab.add_argument("--max-seconds", type=float)
     ab.add_argument("--sfx", default="whoosh-medium", help="library SFX on every cut, or 'none'")
     ab.add_argument("--title", default="Beat edit")
+    sub.add_parser("obs-status", help="OBS: connected? current scene, recording on/off")
+    sub.add_parser("obs-scenes", help="OBS: list scenes")
+    osc = sub.add_parser("obs-scene", help="OBS: switch to a scene")
+    osc.add_argument("name")
+    orc = sub.add_parser("obs-record", help="OBS: start recording (into library/footage/obs)")
+    orc.add_argument("--scene", help="switch to this scene first")
+    ost = sub.add_parser("obs-stop", help="OBS: stop recording, print the file, index it in the library")
+    ost.add_argument("--no-index", action="store_true", help="don't refresh the library index")
     sub.add_parser("doctor", help="check the whole setup and show fixes")
+    ep = sub.add_parser("prep", help="talking-head clip: transcript, cut silences, script segments, planning page")
+    ep.add_argument("video")
+    ep.add_argument("project")
+    ep.add_argument("--min-silence", type=float, default=0.4)
+    ep.add_argument("--padding", type=float, default=0.03)
+    ep.add_argument("--model", default="base")
+    ep.add_argument("--language", default="auto")
+    ep.add_argument("--no-render", action="store_true")
+    it = sub.add_parser("intake", help="sort projects/<project>/inbox into typed folders and index the project")
+    it.add_argument("project")
+    kt = sub.add_parser("kit", help="copy library assets into projects/<project>/kit (for CapCut / any editor)")
+    kt.add_argument("project")
+    kt.add_argument("queries", nargs="+", help="search phrases, one asset each: whoosh 'warm light leak' ...")
+    kt.add_argument("--per-query", type=int, default=1)
     sub.add_parser("workspace", help="(re)create the workspace guide in ~/Documents/resolve-assist")
     np_ = sub.add_parser("new-project", help="create a project folder with footage/music/exports/...")
     np_.add_argument("name")
@@ -207,6 +230,28 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "beat-edit":
             _print(api.assemble_beat_edit(args.videos, args.music, args.beats_per_cut, args.order,
                                           args.max_seconds, None if args.sfx == "none" else args.sfx, args.title))
+        elif args.cmd == "obs-status":
+            res = api.obs_status()
+            _print(res)
+            if not res.get("connected"):
+                return 1
+        elif args.cmd == "obs-scenes":
+            _print(api.obs_scenes())
+        elif args.cmd == "obs-scene":
+            _print(api.obs_switch_scene(args.name))
+        elif args.cmd == "obs-record":
+            _print(api.obs_start_recording(args.scene))
+        elif args.cmd == "obs-stop":
+            _print(api.obs_stop_recording(refresh_library=not args.no_index))
+        elif args.cmd == "prep":
+            res = api.edit_prep(args.video, args.project, args.min_silence, args.padding, args.model, args.language,
+                                not args.no_render)
+            res["plan"] = api.edit_plan(args.project)["plan"]
+            _print(res)
+        elif args.cmd == "intake":
+            _print(api.project_intake(args.project))
+        elif args.cmd == "kit":
+            _print(api.project_kit(args.project, args.queries, args.per_query))
         elif args.cmd == "doctor":
             res = api.doctor()
             for c in res["checks"]:

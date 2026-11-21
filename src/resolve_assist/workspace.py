@@ -11,65 +11,108 @@ from pathlib import Path
 from . import __version__
 from .paths import find_ffmpeg, output_dir
 
-PROJECT_DIRS = ("footage", "music", "stills", "exports", "captions")
+PROJECT_DIRS = ("inbox", "footage", "stills", "maps", "refs", "voice", "music", "docs", "captions", "kit", "exports")
+EDITORS = ("resolve", "capcut", "none")
 
-WORKSPACE_GUIDE = """# resolve-assist workspace
+WORKSPACE_GUIDE = """# Video studio workspace
 
-Start Claude **in this folder** (`cd ~/Documents/resolve-assist && claude`) and it reads this guide.
+Type `studio` in a terminal (or click the Studio icon) and this session starts here with this guide.
+`studio help` lists the other one-word commands (new, open, library, kit, motion, fonts, doctor, editor).
+
+## Which editor?
+The editor is a choice, not a requirement: `studio editor resolve|capcut|none` sets the default,
+stored in `~/.config/studio/config` (`editor=...`). Read that file at the start of a session.
+
+| | DaVinci Resolve | CapCut (or any other editor) |
+|---|---|---|
+| Connection | live bridge (Workspace → Scripts → Utility → **resolve-assist Bridge**) | none: files are handed over |
+| Assets | `import_assets` puts them in the Media Pool | `project_kit` copies them into `projects/<name>/kit/`, the user imports that folder |
+| Captions | `auto_captions` onto a timeline copy | `auto_captions` on the video file → `.srt` → CapCut: Captions → Import file |
+| Music / SFX | `make_music`, `add_music`, SFX on cuts | `make_music` + kit; beat times from `analyze_music` as a cut list |
+| Grade | `apply_grade` (dry run first) | `make_lut` → `.cube` → CapCut: Adjustment → LUT |
+| Graphics | Motion Studio renders → `import_assets` | Motion Studio renders → kit |
+
+## Start cheap: read before you look
+Every project keeps its own memory so work is never repeated:
+- `projects/<name>/brief.md`: goal, style, decisions. Read it first; add one line under "Decisions and
+  progress" whenever something is decided or finished.
+- `projects/<name>/project.json`: every file with kind, duration and size (from `project_intake`).
+  Use it instead of listing folders or probing files again.
+- `prep/*.prep.json` (transcript, cuts), `prep/plan.html` (the chosen scenes), Motion Studio configs:
+  reuse them; re-run a step only when its input changed.
+- The user drops new material into `projects/<name>/inbox/` (footage, photos, map images, voice,
+  references, scripts). Run `project_intake` to sort and index it.
+- Map images (`maps/`) are for the `MapJourney` template: curved routes on a 3D-tilted map with a
+  following camera. Ask for (or estimate, then show) the stop positions as x/y fractions of the image.
+- Higgsfield is for what cannot be filmed or drawn in code (a product shot, a b-roll clip, an
+  illustration with a specific look, image → video). Price first, wait for an OK, save the result into
+  the project and the library so it is generated once.
 
 ## Every session
-1. Open DaVinci Resolve and your project.
-2. Workspace → Scripts → Utility → **resolve-assist Bridge** (one click; leave it running).
-3. Talk to Claude. Examples:
-   - "Check my setup" (runs doctor)
-   - "Make a 9x16 version of this timeline and caption it"
-   - "Grade all clips naturally, then a golden-hour look at 60%"
-   - "Find match cuts in projects/<name>/footage and cut them to the music on the beat"
-   - "Import a whoosh and a warm light leak"
+1. Read `~/.config/studio/config` for the editor. Resolve: check `bridge_status`; if it is not running ask
+   for the Scripts-menu click. CapCut/none: do not ask for Resolve or the bridge at all.
+2. Ask what video is being made, or continue the project the user names (`projects/<name>/notes.md`).
+3. Examples: "Check my setup" · "New project Nail Promo" · "Caption this clip" · "Make a kit with a whoosh,
+   a warm light leak and uplifting music" · "Grade all clips naturally" (Resolve) · "Find match cuts and
+   cut them to the beat" (Resolve builds the timeline; CapCut gets the cut list).
 
 ## The full pipeline
 Higgsfield (AI images/clips, costs credits) → Motion Studio (`~/Documents/Github/motion-studio`,
-animated graphics, `npm run make -- <config> --to-resolve`) → this workspace + Resolve (edit, grade,
-captions, deliver). Full guide: `~/Documents/Github/motion-studio/docs/PIPELINE.md`.
+animated graphics, text overlays, `npm run make -- <config> --to-resolve`) → this workspace + your editor
+(edit, grade, captions, deliver). Full guide: `~/Documents/Github/motion-studio/docs/PIPELINE.md`.
 
 ## Folders
 | Folder | What |
 |---|---|
-| `projects/<name>/` | one folder per video: footage, music, stills, exports, captions, notes.md |
-| `library/` | royalty-free assets (SFX, music, LUTs, overlays, backgrounds, transitions) + README |
-| `library/powergrades/` | put downloaded .drx PowerGrades here |
-| `library/motion/` | renders from Motion Studio (.mov = transparent overlay) |
+| `projects/<name>/` | one folder per video: `inbox` (drop anything here), footage, stills, maps, refs, voice, music, docs, captions, kit, exports, `brief.md`, `project.json` |
+| `projects/<name>/kit/` | library assets picked for this video (import this folder into CapCut/Resolve) |
+| `library/` | royalty-free assets + `index.html` browser (`studio library`) + README |
+| `library/sfx`, `music`, `overlays`, `transitions`, `backgrounds`, `textures`, `luts` | generated locally, free to use |
+| `library/graphics/`, `library/motion/` | transparent PNG graphics / animated overlays from Motion Studio |
+| `library/fonts/` | open-licensed typefaces; `studio fonts` installs them for editor titles |
+| `library/user-sfx`, `user-music`, `user-footage` | your own downloads (keep a `LICENSES.txt`) |
+| `library/powergrades/` | downloaded .drx PowerGrades (Resolve) |
 | `library/ai-generated/` | images/clips generated with Higgsfield |
+| `library/footage/obs/` | OBS recordings (vertical 1080x1920: app screen, talking head, voiceover) |
 | `LUTs/`, `previews/`, `captions/` | generated by the tools |
 | `bridge/` | connection to Resolve (don't edit) |
 | `models/` | local speech model for captions |
 
 ## Rules for the AI (Claude, follow these)
-- Check `bridge_status` first. If not running, ask the user to click the Scripts menu entry.
-- Grades: always `apply_grade` dry run first, then confirm=true. They go into the 'resolve-assist'
-  grade version; `undo_grade` restores. The user allowed applying grades without asking each time
-  after an initial yes in a session, but still report what was done.
-- Edits (music, titles, captions, formats) only on '(resolve-assist)' timeline copies; never delete
-  or change the user's original timelines.
+- Videos are vertical 9:16 unless the user says otherwise: prefer `-9x16` assets.
+- Resolve only: check `bridge_status` first. Grades: always `apply_grade` dry run first, then confirm=true.
+  They go into the 'resolve-assist' grade version; `undo_grade` restores. The user allowed applying grades
+  without asking each time after an initial yes in a session, but still report what was done.
+- Resolve only: edits (music, titles, captions, formats) only on '(resolve-assist)' timeline copies; never
+  delete or change the user's original timelines.
+- CapCut has no scripting: never claim something was changed in CapCut. Prepare files, then say exactly
+  where to click (Import, Captions → Import file, Adjustment → LUT, Blend mode).
 - Prefer library assets (`library_search`) over downloads; mention licenses for user-added assets.
 - Report honestly: say when something failed or was approximated (e.g. look as CDL instead of LUT).
 - Higgsfield spends the user's credits (Basic plan): always run `higgsfield generate cost ...` first,
   state the cost and remaining balance (`higgsfield account status`), and wait for an OK.
   Save results to `library/ai-generated/` and run `library_build` to index them.
 - After adding files to `library/`, run `library_build` so `library_search`/`import_assets` see them.
+- Talking-head clips: `edit_prep` (cut silences, word transcript) → `edit_plan` with your scene
+  recommendations → the user picks scenes in `projects/<name>/prep/plan.html` and pastes the plan back →
+  build with Motion Studio's `MinimalStory` → revisions → sound design last. Use the
+  `minimal-talking-head` skill; never skip the user's planning step.
+- Recording (OBS): `obs_status` first; start a recording only when the user asks (it captures their
+  screen/camera/mic). `obs_stop_recording` returns the file and indexes it; then `import_assets` or a kit.
 """
 
 PROJECT_NOTES = """# {name}
 
 - Created: {date}
-- Format: (e.g. 9x16 Reels / 16x9 YouTube)
+- Format: 9x16 (Reels / TikTok / Shorts)
+- Editor: (resolve / capcut)
 - Music: (file in music/, license)
 - Look: (e.g. golden-hour 60%)
 
 ## Shot list / ideas
 
 ## To do
-- [ ] Import footage into Resolve (drag the footage/ folder into the Media Pool)
+- [ ] Import footage into your editor (drag the footage/ folder in; kit/ holds the picked library assets)
 - [ ] Grade
 - [ ] Cut (match cuts / beat)
 - [ ] Captions
@@ -100,8 +143,161 @@ def new_project(name: str) -> dict:
     if not notes.exists():
         notes.write_text(PROJECT_NOTES.format(name=clean, date=time.strftime("%Y-%m-%d")), encoding="utf-8")
     return {"project": str(root), "folders": list(PROJECT_DIRS),
-            "next": "Copy your footage into footage/, then in Resolve: File → New Project, drag footage/ into "
-                    "the Media Pool, and ask Claude to make a 9x16 timeline if it's for Reels/TikTok."}
+            "next": "Copy your footage into footage/. Resolve: File → New Project, drag footage/ into the Media "
+                    "Pool and ask for a 9x16 timeline. CapCut: New project (9:16) → Import → footage/ and kit/."}
+
+
+PROJECT_BRIEF = """# Brief: {name}
+
+Fill in what you know; Claude reads this first in every session and adds to the log at the bottom,
+so nothing has to be explained or decided twice.
+
+- Goal of the video:
+- Audience / platform: (Reels, TikTok, Shorts…)
+- Length and format: 9x16, ~30 s
+- Style kit: (minimal-talking-head / vox / promo / none)
+- Editor: (resolve / capcut / in-app)
+- Must use: (clips, logo, colours, music)
+- Call to action:
+
+## Notes for the edit
+
+## Decisions and progress (newest first)
+"""
+
+_VIDEO = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".m2ts", ".webm"}
+_AUDIO = {".wav", ".mp3", ".m4a", ".aac", ".aif", ".aiff", ".flac"}
+_IMAGE = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".heic", ".svg", ".gif"}
+_DOCS = {".txt", ".md", ".pdf", ".docx", ".srt", ".json", ".csv", ".rtf"}
+
+
+def _sort_folder(name: str, ext: str) -> str | None:
+    """Where a dropped file belongs. File names steer it: 'map', 'ref', 'voice' and friends."""
+    low = name.lower()
+    if ext in _VIDEO:
+        return "refs" if re.search(r"\b(ref|reference|inspo|example)", low) else "footage"
+    if ext in _AUDIO:
+        return "voice" if re.search(r"(voice|narration|\bvo\b|voiceover|interview)", low) else "music"
+    if ext in _IMAGE:
+        if "map" in low:
+            return "maps"
+        return "refs" if re.search(r"\b(ref|reference|inspo|moodboard|screenshot)", low) else "stills"
+    return "docs" if ext in _DOCS else None
+
+
+def project_intake(project: str) -> dict:
+    """Sort everything in projects/<project>/inbox/ into footage, stills, maps, refs, voice, music, docs
+    (moved inside the project, never overwritten), then refresh the project index."""
+    proj = Path(new_project(project)["project"])
+    moved, left = [], []
+    for f in sorted((proj / "inbox").rglob("*")):
+        if not f.is_file() or f.name.startswith("."):
+            continue
+        folder = _sort_folder(f.name, f.suffix.lower())
+        if folder is None:
+            left.append(f.name)
+            continue
+        dst = proj / folder / f.name
+        n = 1
+        while dst.exists():
+            dst = proj / folder / f"{f.stem}-{n}{f.suffix}"
+            n += 1
+        shutil.move(str(f), str(dst))
+        moved.append(f"{folder}/{dst.name}")
+    index = project_index(project)
+    return {"project": str(proj), "moved": moved, "left_in_inbox": left, **{k: index[k] for k in ("counts", "new", "index")}}
+
+
+def project_index(project: str) -> dict:
+    """Write projects/<project>/project.json: every file with kind, size, duration and dimensions, plus
+    which preparation results exist. Unchanged files are not measured again (size + time match)."""
+    import time
+    proj = Path(new_project(project)["project"])
+    path = proj / "project.json"
+    try:
+        old = {e["file"]: e for e in json.loads(path.read_text(encoding="utf-8")).get("files", [])}
+    except (OSError, json.JSONDecodeError, KeyError):
+        old = {}
+    kinds = {"footage": "video", "stills": "image", "maps": "map", "refs": "reference", "voice": "voice",
+             "music": "music", "docs": "document", "captions": "captions", "exports": "export"}
+    files, new = [], []
+    for folder, kind in kinds.items():
+        for f in sorted((proj / folder).rglob("*")):
+            if not f.is_file() or f.name.startswith("."):
+                continue
+            rel = f.relative_to(proj).as_posix()
+            st = f.stat()
+            prev = old.get(rel)
+            if prev and prev.get("bytes") == st.st_size and prev.get("mtime") == int(st.st_mtime):
+                files.append(prev)
+                continue
+            entry = {"file": rel, "kind": kind, "bytes": st.st_size, "mtime": int(st.st_mtime)}
+            if f.suffix.lower() in _VIDEO | _AUDIO | (_IMAGE - {".svg"}):
+                try:
+                    from .analysis.video import probe
+                    info = probe(f)
+                    for k in ("duration", "width", "height", "fps"):
+                        if info.get(k):
+                            entry[k] = round(info[k], 3) if isinstance(info[k], float) else info[k]
+                except Exception:
+                    pass
+            files.append(entry)
+            new.append(rel)
+    brief = proj / "brief.md"
+    if not brief.exists():
+        brief.write_text(PROJECT_BRIEF.format(name=proj.name), encoding="utf-8")
+    prep = sorted(p.name for p in (proj / "prep").glob("*.prep.json")) if (proj / "prep").is_dir() else []
+    counts: dict[str, int] = {}
+    for e in files:
+        counts[e["kind"]] = counts.get(e["kind"], 0) + 1
+    data = {"name": proj.name, "updated": time.strftime("%Y-%m-%d %H:%M"), "editor": preferred_editor(),
+            "counts": counts, "prepared": prep, "has_plan": (proj / "prep" / "plan.html").exists(),
+            "has_edit": (proj / "edit.json").exists(), "files": files}
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    return {"index": str(path), "brief": str(brief), "counts": counts, "new": new, "prepared": prep}
+
+
+def preferred_editor() -> str:
+    """The user's default editor: 'resolve', 'capcut' or 'none' (~/.config/studio/config, STUDIO_EDITOR)."""
+    import os
+    env = os.environ.get("STUDIO_EDITOR", "").strip().lower()
+    if env in EDITORS:
+        return env
+    try:
+        for line in (Path.home() / ".config" / "studio" / "config").read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "editor" and value.strip().lower() in EDITORS:
+                return value.strip().lower()
+    except OSError:
+        pass
+    return "resolve"
+
+
+def project_kit(project: str, queries: list[str], per_query: int = 1) -> dict:
+    """Copy the best library match for each query into projects/<project>/kit/ (for editors without
+    a bridge, e.g. CapCut: import that one folder). Files are copied, never moved."""
+    from .library.build import library_dir, search
+    if not 1 <= len(queries) <= 40:
+        raise ValueError("give 1..40 search phrases, e.g. ['whoosh', 'warm light leak 9:16', 'uplift music']")
+    proj = Path(new_project(project)["project"])
+    kit = proj / "kit"
+    lib = library_dir().resolve()
+    copied, missing = [], []
+    for q in queries:
+        hits = search(str(q), None, max(1, min(5, int(per_query))))
+        if not hits:
+            missing.append(q)
+        for it in hits:
+            src = (lib / it["file"]).resolve()
+            if lib not in src.parents or not src.is_file():
+                continue
+            dst = kit / it["category"].replace("/", "-") / src.name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if not dst.exists():
+                shutil.copy2(src, dst)
+            copied.append({"query": q, "id": it["id"], "file": str(dst.relative_to(proj)), "usage": it["usage"]})
+    return {"kit": str(kit), "copied": copied, "not_found": missing,
+            "next": "Import the kit folder into your editor (CapCut: Import → select the kit folder)."}
 
 
 def doctor() -> dict:
@@ -117,6 +313,11 @@ def doctor() -> dict:
 
     check("python", sys.version_info >= (3, 10), sys.version.split()[0], "Install Python 3.10+")
     check("resolve-assist", True, __version__)
+    editor = preferred_editor()
+    check("editor", True, f"{editor} (change with: studio editor resolve|capcut|none)")
+    if editor == "capcut":
+        capcut = Path("/Applications/CapCut.app").exists()
+        check("CapCut", capcut, "installed" if capcut else "missing", "Install CapCut from capcut.com or the App Store")
     resolve_app = Path("/Applications/DaVinci Resolve.app")
     store = (resolve_app / "Contents/_MASReceipt").exists()
     check("DaVinci Resolve", resolve_app.exists(), "App Store build (sandboxed)" if store else "installed",
@@ -156,7 +357,18 @@ def doctor() -> dict:
           "claude mcp add --scope user resolve-assist -- <repo>/.venv/bin/resolve-assist-mcp")
     check("workspace guide", (output_dir() / "CLAUDE.md").exists(), str(output_dir() / "CLAUDE.md"),
           "resolve-assist workspace")
+    from .obs import password_file
+    obs_app = Path("/Applications/OBS.app").exists()
+    obs_ok = obs_app and password_file().is_file()
+    check("OBS (recording)", obs_ok, "installed, WebSocket password file present" if obs_ok else
+          ("password file missing" if obs_app else "not installed"),
+          "brew install --cask obs, then follow docs/OBS.md (WebSocket password file)")
     free = shutil.disk_usage(output_dir() if output_dir().exists() else Path.home()).free / 1e9
     check("disk space", free > 20, f"{free:.0f} GB free", "Free up space: video work needs 20 GB+")
-    return {"ready": all(c["ok"] for c in checks if c["check"] != "bridge running"),
-            "checks": checks, "library": str(library_dir())}
+    optional = {"bridge running", "OBS (recording)"}
+    if editor != "resolve":                       # Resolve is not needed for a CapCut / file-only workflow
+        optional |= {"DaVinci Resolve", "bridge installed"}
+    if editor != "resolve":                       # don't nag about a bridge that isn't part of this workflow
+        checks = [c for c in checks if c["check"] not in ("bridge running", "bridge installed")]
+    return {"ready": all(c["ok"] for c in checks if c["check"] not in optional),
+            "editor": editor, "checks": checks, "library": str(library_dir())}

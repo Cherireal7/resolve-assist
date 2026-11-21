@@ -39,11 +39,17 @@ class TempEnv:
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
         self.saved = {k: os.environ.get(k) for k in ("RESOLVE_ASSIST_OUTPUT", "RESOLVE_ASSIST_HOME",
-                                                       "RESOLVE_ASSIST_LUT_DIR", "RESOLVE_ASSIST_FFMPEG", "PATH")}
+                                                       "RESOLVE_ASSIST_LUT_DIR", "RESOLVE_ASSIST_FFMPEG", "PATH",
+                                                       "RESOLVE_ASSIST_OBS_HOST", "RESOLVE_ASSIST_OBS_PORT",
+                                                       "RESOLVE_ASSIST_OBS_PASSWORD_FILE")}
         os.environ["RESOLVE_ASSIST_OUTPUT"] = str(root / "out")
         os.environ["RESOLVE_ASSIST_HOME"] = str(root / "state")
         os.environ["RESOLVE_ASSIST_LUT_DIR"] = str(root / "resolve-luts")
         os.environ.pop("RESOLVE_ASSIST_FFMPEG", None)
+        # never touch the real OBS or its password: tests point these at a fake server / temp file
+        os.environ["RESOLVE_ASSIST_OBS_HOST"] = "127.0.0.1"
+        os.environ["RESOLVE_ASSIST_OBS_PASSWORD_FILE"] = str(root / "obs-password")
+        os.environ.pop("RESOLVE_ASSIST_OBS_PORT", None)
         self.root = root
         return self
 
