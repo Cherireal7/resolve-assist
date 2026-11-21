@@ -32,6 +32,9 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 - `commons_search` / `commons_add` (MCP), `commons` (CLI): Wikimedia Commons images with licence, author
   and source recorded; flags for free, attribution and share-alike. `project_credit` + generated `CREDITS.md`.
 - `doctor --json` for the Tibeb app.
+- 20 tactile SFX (`library/sfx_tactile.py`): soft/mechanical/switch clicks, wood and glass taps, stamp, paper
+  slide, page turn, pen scribble, marker stroke, pencil tick, tape, typewriter keys, plucks, wood block,
+  tiny bell, soft shutter. Library: 370 assets, 107 SFX.
 - `analyze_music` uses the tempo stored for generated library tracks (syncopated presets can read as
   2/3 or half tempo otherwise). `make-music` accepts every preset.
 

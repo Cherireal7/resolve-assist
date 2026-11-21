@@ -82,6 +82,10 @@ animated graphics, text overlays, `npm run make -- <config> --to-resolve`) → t
 - Videos are vertical 9:16 unless the user says otherwise: prefer `-9x16` assets.
 - Every video ends with the credit "Edit by Cheri" (end card or final seconds). Check a last frame for it.
 - Captions should vary from line to line (size, emphasis, entrance); never the same pill for every line.
+- Sound effects: vary them and keep whooshes rare (the user finds whoosh-on-everything tiresome). Use the
+  tactile set for most cues: clicks, taps, stamp-thunk, paper-slide, page-turn, pen-scribble,
+  marker-stroke, typewriter keys, plucks, tiny bells (`library_search tactile`). Rotate within a role and
+  never use the same sound on consecutive cues.
 - Resolve only: check `bridge_status` first. Grades: always `apply_grade` dry run first, then confirm=true.
   They go into the 'resolve-assist' grade version; `undo_grade` restores. The user allowed applying grades
   without asking each time after an initial yes in a session, but still report what was done.

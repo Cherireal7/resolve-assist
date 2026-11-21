@@ -19,7 +19,12 @@ from resolve_assist.library.build import scan_user_folders
 
 class SfxTests(unittest.TestCase):
     def test_new_recipes_have_unique_names_and_render(self):
-        names = [*sfx.RECIPES, *sfx_ui.RECIPES, *sfx_cine.RECIPES]
+        from resolve_assist.library import sfx_tactile
+        names = [*sfx.RECIPES, *sfx_ui.RECIPES, *sfx_cine.RECIPES, *sfx_tactile.RECIPES]
+        for name, (fn, kw, tags, usage) in sfx_tactile.RECIPES.items():
+            left, right = fn(**kw)
+            self.assertGreater(max(map(abs, left)), 0.01, name)
+            self.assertEqual(len(left), len(right))
         self.assertEqual(len(names), len(set(names)))
         self.assertGreaterEqual(len(names), 80)
         with tempfile.TemporaryDirectory() as d:
