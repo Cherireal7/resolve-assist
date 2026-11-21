@@ -239,5 +239,34 @@ class NarrationAndCreditTests(unittest.TestCase):
                 os.environ.pop("RESOLVE_ASSIST_OUTPUT", None)
 
 
+class EditorSupportTests(unittest.TestCase):
+    def test_peaks_follow_the_sound_and_are_cached(self):
+        from resolve_assist import api
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["RESOLVE_ASSIST_OUTPUT"] = d
+            try:
+                p = Path(d) / "tone.wav"
+                generate("ambient", 3.0, p)
+                first = api.media_peaks(str(p), 20)
+                self.assertAlmostEqual(first["duration"], 3.0, delta=0.05)
+                self.assertAlmostEqual(len(first["peaks"]) / first["per_second"], 3.0, delta=0.1)
+                self.assertEqual(max(first["peaks"]), 1.0)
+                self.assertLess(first["peaks"][0], first["peaks"][len(first["peaks"]) // 2])   # the track fades in
+                self.assertEqual(len(list((Path(d) / "cache" / "peaks").glob("*.json"))), 1)
+                self.assertEqual(api.media_peaks(str(p), 20), first)
+            finally:
+                os.environ.pop("RESOLVE_ASSIST_OUTPUT", None)
+
+    def test_look_curves_describe_each_look(self):
+        from resolve_assist import api
+        looks = api.look_curves()["looks"]
+        self.assertIn("golden-hour", looks)
+        bw, warm = looks["bw-contrast"], looks["golden-hour"]
+        self.assertEqual(bw["saturation"], 0.0)
+        self.assertEqual(len(warm["r"]), 17)
+        self.assertGreater(warm["r"][12], warm["b"][12])          # warm look: more red than blue in the highlights
+        self.assertTrue(all(b >= a for a, b in zip(warm["g"], warm["g"][1:])))   # monotonic tone curve
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -47,7 +47,7 @@ class _Builder:
         self.skipped: list[str] = []
 
     def add(self, category: str, name: str, ext: str, make: Callable[[Path], dict | None],
-            tags: list[str], usage: str) -> None:
+            tags: list[str], usage: str, static: dict | None = None) -> None:
         rel = Path(category) / f"{name}{ext}"
         path = self.root / rel
         extra: dict = {}
@@ -59,6 +59,14 @@ class _Builder:
             except Exception as exc:  # one failing asset must not stop the library
                 self.skipped.append(f"{rel}: {exc}")
                 return
+        extra = {**(static or {}), **extra}
+        if ext == ".wav" and "seconds" not in extra:      # files kept from an earlier build: read the length
+            try:
+                import wave
+                with wave.open(str(path)) as w:
+                    extra["seconds"] = round(w.getnframes() / w.getframerate(), 2)
+            except Exception:
+                pass
         self.items.append({"id": name, "category": category, "file": str(rel), "tags": tags,
                            "usage": usage, "license": LICENSE, **extra})
 
@@ -80,7 +88,7 @@ def build_library(force: bool = False, log: Callable[[str], None] = lambda s: No
         b.add("music", f"{name}-30s", ".wav", lambda p, n=name: {"seconds": generate_music(n, 30.0, p)["seconds"],
                                                                   "bpm": MUSIC_PRESETS[n]["bpm"]},
               ["music", *name.split("-"), *[w for w in cfg["description"].lower().replace(",", "").replace(":", "").split()
-                                            if len(w) > 3][:6]], cfg["description"])
+                                            if len(w) > 3][:6]], cfg["description"], static={"bpm": cfg["bpm"]})
 
     # LUTs (each look at full strength; also 50% variants)
     for name, look in LOOKS.items():

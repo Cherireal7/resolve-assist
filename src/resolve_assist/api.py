@@ -515,6 +515,58 @@ def analyze_music(path: str) -> dict:
         shutil.rmtree(tmp.parent, ignore_errors=True)
 
 
+def media_peaks(path: str, per_second: int = 40, beats: bool = False) -> dict:
+    """Loudness outline of an audio file or a video's soundtrack (values 0..1, `per_second` of them per
+    second) for drawing waveforms, plus tempo and beat times when asked. Cached per file version."""
+    import hashlib
+    from .analysis.beats import read_wav_mono
+    from .analysis.video import extract_audio
+    from .paths import check_input_audio
+    p = check_input_audio(path)
+    st = p.stat()
+    per_second = max(5, min(200, int(per_second)))
+    key = hashlib.sha1(f"{p}|{st.st_mtime_ns}|{st.st_size}|{per_second}|{int(beats)}".encode()).hexdigest()[:20]
+    cache = output_dir() / "cache" / "peaks" / f"{key}.json"
+    if cache.is_file():
+        return json.loads(cache.read_text(encoding="utf-8"))
+    wav = extract_audio(p, 8000)
+    try:
+        samples, rate = read_wav_mono(wav)
+    finally:
+        shutil.rmtree(wav.parent, ignore_errors=True)
+    duration = len(samples) / rate
+    while duration * per_second > 12000 and per_second > 5:      # long files: fewer points, same shape
+        per_second = max(5, per_second // 2)
+    hop = max(1, rate // per_second)
+    raw = [max(map(abs, samples[i:i + hop]), default=0.0) for i in range(0, len(samples), hop)]
+    top = max(raw, default=0.0) or 1.0
+    out = {"duration": round(duration, 3), "per_second": rate / hop, "peaks": [round(v / top, 2) for v in raw]}
+    if beats:
+        try:
+            m = analyze_music(str(p))
+            out.update({"bpm": m["bpm"], "beats": m["beats"], "downbeats": m["downbeats"]})
+        except Exception as exc:                                  # no clear beat is not an error for a waveform
+            out.update({"bpm": 0, "beats": [], "downbeats": [], "beat_note": str(exc)[:120]})
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(out), encoding="utf-8")
+    return out
+
+
+def look_curves(points: int = 17) -> dict:
+    """Every built-in look as per-channel tone curves on the neutral axis plus its saturation: what a
+    browser needs to preview and render the look with an SVG filter (used by the Tibeb editor)."""
+    from .color.looks import LOOKS, look_transform
+    out = {}
+    for name, look in LOOKS.items():
+        fn = look_transform(look, 1.0)
+        ramp = [fn((i / (points - 1),) * 3) for i in range(points)]
+        out[name] = {"description": look.description, "saturation": look.cdl.saturation,
+                     "r": [round(min(1.0, max(0.0, c[0])), 4) for c in ramp],
+                     "g": [round(min(1.0, max(0.0, c[1])), 4) for c in ramp],
+                     "b": [round(min(1.0, max(0.0, c[2])), 4) for c in ramp]}
+    return {"points": points, "looks": out}
+
+
 def _library_bpm(p: Path) -> float | None:
     """Tempo of a generated library track (stored in the manifest when it was built)."""
     from .library.build import library_dir, load_manifest

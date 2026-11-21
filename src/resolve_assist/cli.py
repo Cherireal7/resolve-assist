@@ -158,6 +158,11 @@ def main(argv: list[str] | None = None) -> int:
     cr.add_argument("--source", default="")
     cr.add_argument("--license", default="")
     cr.add_argument("--author", default="")
+    pk = sub.add_parser("peaks", help="waveform outline (and beats) of an audio or video file, as JSON")
+    pk.add_argument("path")
+    pk.add_argument("--per-second", type=int, default=40)
+    pk.add_argument("--beats", action="store_true")
+    sub.add_parser("look-curves", help="built-in looks as tone curves + saturation, as JSON")
     it = sub.add_parser("intake", help="sort projects/<project>/inbox into typed folders and index the project")
     it.add_argument("project")
     kt = sub.add_parser("kit", help="copy library assets into projects/<project>/kit (for CapCut / any editor)")
@@ -272,6 +277,10 @@ def main(argv: list[str] | None = None) -> int:
             _print(api.commons_add(args.add, args.query) if args.add else api.commons_search(args.query))
         elif args.cmd == "credit":
             _print(api.project_credit(args.project, args.file, args.source, args.license, args.author))
+        elif args.cmd == "peaks":
+            print(json.dumps(api.media_peaks(args.path, args.per_second, args.beats)))
+        elif args.cmd == "look-curves":
+            print(json.dumps(api.look_curves()))
         elif args.cmd == "intake":
             _print(api.project_intake(args.project))
         elif args.cmd == "kit":
