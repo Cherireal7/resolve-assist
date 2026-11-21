@@ -80,6 +80,8 @@ animated graphics, text overlays, `npm run make -- <config> --to-resolve`) → t
 
 ## Rules for the AI (Claude, follow these)
 - Videos are vertical 9:16 unless the user says otherwise: prefer `-9x16` assets.
+- Every video ends with the credit "Edit by Cheri" (end card or final seconds). Check a last frame for it.
+- Captions should vary from line to line (size, emphasis, entrance); never the same pill for every line.
 - Resolve only: check `bridge_status` first. Grades: always `apply_grade` dry run first, then confirm=true.
   They go into the 'resolve-assist' grade version; `undo_grade` restores. The user allowed applying grades
   without asking each time after an initial yes in a session, but still report what was done.
