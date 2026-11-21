@@ -48,6 +48,22 @@ Every project keeps its own memory so work is never repeated:
   illustration with a specific look, image → video). Price first, wait for an OK, save the result into
   the project and the library so it is generated once.
 
+## Editing a timeline (`projects/<name>/edit.json`)
+The Tibeb editor, the renderer and you all work on this one file; the open editor reloads it when it
+changes, and the user can undo. Shape: `{version: 1, duration, background, credit?, tracks: [...]}`,
+tracks listed top layer first, each `{id, name, kind: text|video|audio, muted?, duck?, clips: [...]}`.
+Times are seconds. Every clip has `id` (unique in the file), `start`, `length`, `kind`:
+- `video` / `image`: `src`, `in` (seconds skipped at the source start), `volume`, `fit` (cover|contain),
+  `scale`, `x`, `y` (% shift), `opacity`, `zoom` (slow push, -0.5..0.5); optional colour: `look`
+  (golden-hour, warm-film, teal-orange, cool-night, bleach-bypass, clean-commercial, bw-contrast,
+  vintage-fade, moody-teal, pastel-dream), `lookStrength` 0..1, `exposure`, `contrast`, `saturation`,
+  `temperature`, `tint`.
+- `text`: `text`, `style`, `typeface?`, `motion`, `size` (% of the short side), `color`, `accent`,
+  `x`, `y` (centre, % from left/top), `align`.
+- `audio`: `src`, `in`, `volume`, `fadeIn`, `fadeOut`.
+`src` is `projects/<slug>/<file inside the project>` (slug = project name lower-cased with dashes).
+Change only what was asked, keep all other fields, keep the JSON valid, and keep the end credit.
+
 ## Every session
 1. Read `~/.config/studio/config` for the editor. Resolve: check `bridge_status`; if it is not running ask
    for the Scripts-menu click. CapCut/none: do not ask for Resolve or the bridge at all.
