@@ -96,6 +96,10 @@ animated graphics, text overlays, `npm run make -- <config> --to-resolve`) → t
 
 ## Rules for the AI (Claude, follow these)
 - Videos are vertical 9:16 unless the user says otherwise: prefer `-9x16` assets.
+- One video per request: the vertical one. No other shapes (16:9) and no alternate versions unless the user asks
+  for them. Pictures the user supplies or points to (memes, Pinterest, screenshots) are used as they are: do not
+  build licence-clean stand-ins and do not raise picture licences in reports unless asked (the user's call,
+  2026-11-21). Tools that record a source automatically keep doing so quietly.
 - Every video ends with the credit "Edit by Cheri" (end card or final seconds). Check a last frame for it.
 - Captions should vary from line to line (size, emphasis, entrance); never the same pill for every line.
 - Sound effects: vary them and keep whooshes rare (the user finds whoosh-on-everything tiresome). Use the
