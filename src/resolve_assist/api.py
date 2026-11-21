@@ -782,6 +782,16 @@ def project_intake(project: str) -> dict:
     return _intake(project)
 
 
+def capcut_draft(project: str) -> dict:
+    """EXPERIMENTAL: create a new CapCut project from the project's hand-off folder (run handoff first)."""
+    from . import capcut
+    from .workspace import new_project as _new
+    proj = Path(_new(project)["project"])
+    if not (proj / "handoff" / "manifest.json").is_file():
+        raise ValueError("run handoff for this project first")
+    return capcut.build_draft(proj / "handoff", f"Tibeb {proj.name}")
+
+
 def handoff(project: str, format: str = "9x16", motion_dir: str | None = None) -> dict:
     """Export a project's edit as separate layers (cut clips, transparent text overlays, audio stems,
     looks, OTIO/FCPXML timeline, README) into projects/<project>/handoff/ for CapCut, Resolve or any editor."""

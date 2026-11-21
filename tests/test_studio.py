@@ -317,6 +317,53 @@ class HandoffTests(unittest.TestCase):
                 handoff.build(proj, "9x16", None)
 
 
+class CapCutDraftTests(unittest.TestCase):
+    def test_writes_only_a_new_marked_draft_from_a_template(self):
+        from unittest import mock
+        from resolve_assist import capcut
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            root = home / "Movies" / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"
+            tpl = root / "mine"
+            tpl.mkdir(parents=True)
+            template = {"canvas_config": {"width": 1920, "height": 1080, "ratio": "original"}, "duration": 0, "fps": 30.0, "id": "X", "name": "", "version": 360000,
+                        "new_version": "191.0.0", "platform": {"app_version": "9.7.1"}, "tracks": [],
+                        "materials": {"videos": [], "audios": [], "speeds": [], "canvases": [], "sound_channel_mappings": [], "audio_fades": [], "texts": []}}
+            (tpl / "draft_info.json").write_text(json.dumps(template))
+            (tpl / "draft_meta_info.json").write_text(json.dumps({"draft_name": "mine", "draft_id": "A"}))
+            hand = home / "handoff"
+            for sub in ("video", "audio"):
+                (hand / sub).mkdir(parents=True)
+            (hand / "video" / "01-p.png").write_bytes(encode_png_1x1())
+            generate("ambient", 2.0, hand / "audio" / "02-m.wav")
+            (hand / "manifest.json").write_text(json.dumps({"project": "P", "format": "9x16", "size": [1080, 1920], "fps": 30, "duration": 2, "notes": [], "items": [
+                {"file": "video/01-p.png", "kind": "image", "track": "Video", "start": 0, "length": 2, "fit": "cover", "scale": 1, "opacity": 1},
+                {"file": "audio/02-m.wav", "kind": "audio", "track": "Music", "start": 0, "length": 2, "volume": 0.4, "fadeOut": 1}]}))
+            with mock.patch.object(Path, "home", return_value=home), mock.patch.object(capcut, "capcut_running", return_value=False):
+                res = capcut.build_draft(hand, "Tibeb P")
+                draft = Path(res["draft"])
+                info = json.loads((draft / "draft_info.json").read_text())
+                self.assertEqual((info["version"], info["platform"]["app_version"]), (360000, "9.7.1"))     # format fields come from the template
+                self.assertEqual(info["canvas_config"]["ratio"], "9:16")
+                self.assertEqual([(t["type"], len(t["segments"])) for t in info["tracks"]], [("video", 1), ("audio", 1)])
+                seg = info["tracks"][0]["segments"][0]
+                self.assertEqual(seg["target_timerange"], {"duration": 2000000, "start": 0})
+                self.assertGreater(seg["clip"]["scale"]["x"], 1.0)                                          # square still must fill a 9:16 frame
+                self.assertEqual(info["tracks"][1]["segments"][0]["volume"], 0.4)
+                self.assertEqual(info["materials"]["audio_fades"][0]["fade_out_duration"], 1000000)
+                self.assertTrue(Path(info["materials"]["videos"][0]["path"]).is_file())                     # media copied into the draft
+                self.assertTrue((draft / capcut.MARKER).is_file())
+                self.assertEqual(json.loads((tpl / "draft_info.json").read_text()), template)               # the template is untouched
+                second = capcut.build_draft(hand, "Tibeb P")
+                self.assertNotEqual(second["draft"], res["draft"])                                          # never overwrites
+                self.assertEqual(capcut.find_template().name, "mine")                                       # our drafts are never used as template
+                self.assertEqual(sorted(capcut.remove()["removed"]), ["Tibeb P", "Tibeb P 2"])
+                self.assertTrue(tpl.is_dir())
+            with mock.patch.object(Path, "home", return_value=home), mock.patch.object(capcut, "capcut_running", return_value=True):
+                with self.assertRaises(RuntimeError):
+                    capcut.build_draft(hand, "Tibeb P")
+
+
 def encode_png_1x1() -> bytes:
     from resolve_assist.imaging.png import encode_png
     return encode_png(2, 2, [(1.0, 0.5, 0.2)] * 4)

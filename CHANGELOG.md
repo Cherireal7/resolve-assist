@@ -40,6 +40,11 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
   `timeline.fcpxml`, `manifest.json` and a README with every clip's start time. Overlapping clips get their
   own lanes. The timeline files have not been opened in an editor yet.
 - `peaks` (waveform outline + beats, cached) and `look-curves` for the Tibeb editor.
+- EXPERIMENTAL `capcut-draft` (`capcut.py`): writes a new CapCut desktop project from a hand-off, using a draft
+  CapCut made itself as the template for format fields. Media is copied into the draft; picture clips,
+  transparent text overlays and audio (volume, fades) go on separate tracks. New, marked folders only;
+  refuses while CapCut runs; `capcut-remove` deletes only its own drafts. On CapCut 9.7.1 the project is
+  listed after launch; opening it in the editor is the pending check.
 - `analyze_music` uses the tempo stored for generated library tracks (syncopated presets can read as
   2/3 or half tempo otherwise). `make-music` accepts every preset.
 

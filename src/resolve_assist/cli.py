@@ -142,6 +142,12 @@ def main(argv: list[str] | None = None) -> int:
     ep.add_argument("--model", default="base")
     ep.add_argument("--language", default="auto")
     ep.add_argument("--no-render", action="store_true")
+    cd = sub.add_parser("capcut-draft", help="EXPERIMENTAL: write a new CapCut project from a project's hand-off")
+    cd.add_argument("project")
+    crm = sub.add_parser("capcut-remove", help="delete CapCut projects this tool created (never others)")
+    crm.add_argument("name", nargs="?")
+    ci = sub.add_parser("capcut-inspect", help="summarise a CapCut project on disk")
+    ci.add_argument("name")
     ho = sub.add_parser("handoff", help="export a project's edit as layers for CapCut / Resolve / any editor")
     ho.add_argument("project")
     ho.add_argument("--format", default="9x16", choices=("9x16", "16x9"))
@@ -274,6 +280,14 @@ def main(argv: list[str] | None = None) -> int:
                                 not args.no_render)
             res["plan"] = api.edit_plan(args.project)["plan"]
             _print(res)
+        elif args.cmd == "capcut-draft":
+            _print(api.capcut_draft(args.project))
+        elif args.cmd == "capcut-remove":
+            from . import capcut
+            _print(capcut.remove(args.name))
+        elif args.cmd == "capcut-inspect":
+            from . import capcut
+            _print(capcut.inspect(args.name))
         elif args.cmd == "handoff":
             _print(api.handoff(args.project, args.format, args.motion_dir))
         elif args.cmd == "narrate":
