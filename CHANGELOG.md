@@ -44,7 +44,9 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
   CapCut made itself as the template for format fields. Media is copied into the draft; picture clips,
   transparent text overlays and audio (volume, fades) go on separate tracks. New, marked folders only;
   refuses while CapCut runs; `capcut-remove` deletes only its own drafts. On CapCut 9.7.1 the project is
-  listed after launch; opening it in the editor is the pending check.
+  opens in the editor with all tracks (confirmed by the user on 2026-11-21). Titles can be written as
+  editable CapCut text (`native_text`, not yet confirmed in CapCut). `capcut-pull` reads a project back and
+  lists moves, trims, deletions, volume and text changes, with `--apply` to update `edit.json` (backup kept).
 - `analyze_music` uses the tempo stored for generated library tracks (syncopated presets can read as
   2/3 or half tempo otherwise). `make-music` accepts every preset.
 

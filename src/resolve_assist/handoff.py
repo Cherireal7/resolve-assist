@@ -202,7 +202,7 @@ def build(project_dir: Path, fmt: str = "9x16", motion_dir: Path | None = None, 
                         notes.append(f"Text '{str(c.get('text'))[:30]}' was not rendered (Motion Studio not available): recreate it from text/titles.json.")
                         continue
                     meta["text"] = c.get("text")
-                item = {"file": rel, "kind": c["kind"], **meta}
+                item = {"id": c["id"], "track_id": track["id"], "file": rel, "kind": c["kind"], **meta}
                 items.append(item)
                 entries.append({"file": rel, "start": c["start"], "length": length, "name": Path(rel).stem, "meta": meta})
             if entries:

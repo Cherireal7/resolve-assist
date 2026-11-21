@@ -92,11 +92,39 @@ def _segment(material_id: str, start: float, length: float, refs: list[str], ren
     return seg
 
 
-def build_draft(handoff: Path, name: str, log=lambda m: None) -> dict:
-    """Create a new CapCut draft named `name` from a hand-off folder (manifest.json + media)."""
+def _rgb(hex_color: str) -> list[float]:
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(ch * 2 for ch in h)
+    try:
+        return [round(int(h[i:i + 2], 16) / 255, 4) for i in (0, 2, 4)]
+    except ValueError:
+        return [1.0, 1.0, 1.0]
+
+
+def _text_material(title: dict) -> dict:
+    """A plain, editable CapCut text. Our animated styles do not exist in CapCut; the styled version is
+    kept in the media bin as a transparent clip."""
+    text = str(title.get("text", ""))
+    size = round(max(4.0, min(60.0, float(title.get("size", 8)) * 1.5)), 2)
+    color = _rgb(str(title.get("color", "#FFFFFF")))
+    align = {"left": 0, "center": 1, "right": 2}.get(str(title.get("align", "center")), 1)
+    content = {"text": text, "styles": [{"range": [0, len(text.encode("utf-16-le")) // 2], "size": size, "bold": True, "italic": False, "underline": False,
+                                           "fill": {"alpha": 1.0, "content": {"render_type": "solid", "solid": {"alpha": 1.0, "color": color}}},
+                                           "font": {"id": "", "path": ""}}]}
+    return {"add_type": 0, "alignment": align, "background_alpha": 1.0, "background_color": "", "background_style": 0, "bold_width": 0.0, "border_alpha": 1.0,
+            "border_color": "", "border_width": 0.08, "check_flag": 7, "content": json.dumps(content, ensure_ascii=False), "font_name": "", "font_path": "", "font_size": size,
+            "has_shadow": False, "id": _uid(), "italic_degree": 0, "letter_spacing": 0.0, "line_feed": 1, "line_max_width": 0.82, "line_spacing": 0.02,
+            "shadow_alpha": 0.9, "shadow_color": "", "text_alpha": 1.0, "text_color": "#" + "".join(f"{round(v * 255):02X}" for v in color), "type": "text",
+            "typesetting": 0, "underline": False, "use_effect_default_color": True, "words": {"end_time": [], "start_time": [], "text": []}}
+
+
+def build_draft(handoff: Path, name: str, native_text: bool = True, log=lambda m: None) -> dict:
+    """Create a new CapCut draft named `name` from a hand-off folder (manifest.json + media).
+    native_text: titles become CapCut text you can retype (plain look); the styled, animated versions stay
+    in the media bin as transparent clips. False = put the styled clips on the timeline instead."""
     from .analysis.video import probe
-    if capcut_running():
-        raise RuntimeError("Close CapCut first: it rewrites its project list when it quits.")
+    running = capcut_running()      # a new folder is harmless while CapCut is open; it shows up after a restart
     manifest = json.loads((handoff / "manifest.json").read_text(encoding="utf-8"))
     template = find_template()
     info = json.loads((template / "draft_info.json").read_text(encoding="utf-8"))
@@ -110,7 +138,8 @@ def build_draft(handoff: Path, name: str, log=lambda m: None) -> dict:
         n += 1
     media_dir = folder / "Resources" / "tibeb"
     media_dir.mkdir(parents=True)
-    (folder / MARKER).write_text("Created by resolve-assist (Tibeb). Safe to delete with: resolve-assist capcut-remove\n", encoding="utf-8")
+    (folder / MARKER).write_text(json.dumps({"note": "Created by resolve-assist (Tibeb). Delete with: resolve-assist capcut-remove",
+                                              "handoff": str(handoff.resolve()), "project": manifest.get("project", "")}), encoding="utf-8")
     for sub in ("adjust_mask", "matting", "qr_upload", "smart_crop", "Resources/audioAlg", "Resources/videoAlg", "Resources/digitalHuman/audio",
                 "Resources/digitalHuman/bsinfo", "Resources/digitalHuman/video"):
         (folder / sub).mkdir(parents=True, exist_ok=True)
@@ -131,9 +160,17 @@ def build_draft(handoff: Path, name: str, log=lambda m: None) -> dict:
     draft["canvas_config"] = {**draft.get("canvas_config", {}), "width": w, "height": h, "ratio": "9:16" if h > w else "16:9"}
     mats = draft["materials"]
 
+    titles = []
+    if native_text and (handoff / "text" / "titles.json").is_file():
+        titles = json.loads((handoff / "text" / "titles.json").read_text(encoding="utf-8"))
+    title_ids = {t["id"] for t in titles}
     by_track: dict[str, list[dict]] = {}
+    spare: list[dict] = []          # styled text clips kept in the media bin only
     for it in manifest["items"]:
-        by_track.setdefault(it["track"], []).append(it)
+        if it["kind"] == "text" and it.get("id") in title_ids:
+            spare.append(it)
+        else:
+            by_track.setdefault(it["track"], []).append(it)
     order = sorted(by_track, key=lambda t: (by_track[t][0]["kind"] == "audio", ))      # picture tracks first (bottom to top), then audio
     bin_items, ti = [], 0
     for tname in order:
@@ -184,6 +221,26 @@ def build_draft(handoff: Path, name: str, log=lambda m: None) -> dict:
         draft["tracks"].append(track)
         ti += 1
 
+    for it in spare:                # copy the styled overlays and list them in the bin
+        src = handoff / it["file"]
+        dst = media_dir / src.name
+        if src.is_file() and not dst.exists():
+            shutil.copy2(src, dst)
+            bin_items.append({"ai_group_type": "", "create_time": int(time.time()), "duration": _us(it["length"]), "enter_from": 0, "extra_info": dst.name, "file_Path": str(dst),
+                              "height": h, "id": str(uuid.uuid4()), "import_time": int(time.time()), "import_time_ms": now_us, "item_source": 1, "material_color_tag": "", "md5": "",
+                              "metetype": "video", "roughcut_time_range": {"duration": _us(it["length"]), "start": 0}, "sub_time_range": {"duration": -1, "start": -1}, "type": 0, "width": w})
+    if titles:
+        track = {"attribute": 0, "flag": 0, "id": _uid(), "is_default_name": False, "name": "Titles", "segments": [], "type": "text"}
+        for li, t in enumerate(sorted(titles, key=lambda x: x["start"])):
+            mat = _text_material(t)
+            mats.setdefault("texts", []).append(mat)
+            seg = _segment(mat["id"], float(t["start"]), float(t["length"]), [], 14000 + li, ti, 1.0, visual=True)
+            seg["clip"]["transform"] = {"x": round(float(t.get("x", 50)) / 50 - 1, 4), "y": round(-(float(t.get("y", 50)) / 50 - 1), 4)}
+            seg["hdr_settings"] = None
+            seg["tibeb_id"] = t["id"]
+            track["segments"].append(seg)
+        draft["tracks"].append(track)
+
     text = json.dumps(draft, ensure_ascii=False, separators=(",", ":"))
     (folder / "draft_info.json").write_text(text, encoding="utf-8")
     (folder / "draft_info.json.bak").write_text(text, encoding="utf-8")
@@ -206,8 +263,22 @@ def build_draft(handoff: Path, name: str, log=lambda m: None) -> dict:
             subprocess.run([ff, "-nostdin", "-v", "error", "-y", "-i", str(first), "-frames:v", "1", "-vf", "scale=480:-2", str(folder / "draft_cover.jpg")],
                            capture_output=True, timeout=60, check=False)
     return {"draft": str(folder), "name": folder.name, "template": template.name, "tracks": [{"name": t["name"], "type": t["type"], "clips": len(t["segments"])} for t in draft["tracks"]],
-            "media_bytes": size, "experimental": True,
-            "next": "Open CapCut: the project should appear in the list. Open it and check every clip. If CapCut rejects it, run: resolve-assist capcut-remove"}
+            "media_bytes": size, "experimental": True, "editable_titles": len(titles),
+            "next": ("Restart CapCut to see the project in its list." if running else "Open CapCut: the project is in the list.")
+                    + " Titles are plain CapCut text; the styled versions are in the media bin."}
+
+
+def list_projects() -> list[dict]:
+    """Drafts this tool created, newest first, with the studio project each came from."""
+    out = []
+    for n in list_ours():
+        d = drafts_dir() / n
+        try:
+            origin = json.loads((d / MARKER).read_text(encoding="utf-8"))
+        except ValueError:
+            origin = {}
+        out.append({"name": n, "project": origin.get("project", ""), "modified": int((d / "draft_info.json").stat().st_mtime)})
+    return sorted(out, key=lambda x: -x["modified"])
 
 
 def list_ours() -> list[str]:
@@ -234,3 +305,95 @@ def inspect(name: str) -> dict:
     return {"name": name, "duration_s": info.get("duration", 0) / US, "canvas": info.get("canvas_config"), "version": info.get("version"), "new_version": info.get("new_version"),
             "tracks": [{"type": t.get("type"), "name": t.get("name"), "clips": len(t.get("segments", []))} for t in info.get("tracks", [])],
             "materials": {k: len(v) for k, v in info.get("materials", {}).items() if v}, "ours": (d / MARKER).exists()}
+
+
+def pull(name: str, apply: bool = False) -> dict:
+    """Compare a CapCut project this tool created with the edit it came from, and report what was changed
+    in CapCut: clips moved, trimmed, deleted, volume or text changed, new clips added. With apply=True the
+    changes are written into the project's edit.json (the previous version is kept next to it)."""
+    folder = drafts_dir() / name
+    if not (folder / MARKER).is_file():
+        raise ValueError("only projects created by this tool can be read back")
+    try:
+        origin = json.loads((folder / MARKER).read_text(encoding="utf-8"))
+        handoff = Path(origin["handoff"])
+    except (ValueError, KeyError) as exc:
+        raise ValueError("this project was made by an older version and does not record where it came from") from exc
+    manifest = json.loads((handoff / "manifest.json").read_text(encoding="utf-8"))
+    edit_file = handoff.parent / "edit.json"
+    doc = json.loads(edit_file.read_text(encoding="utf-8"))
+    info = json.loads((folder / "draft_info.json").read_text(encoding="utf-8"))
+    clips = {c["id"]: c for t in doc["tracks"] for c in t["clips"]}
+    by_file = {Path(i["file"]).name: i for i in manifest["items"] if i.get("id")}
+    known = {Path(i["file"]).name for i in manifest["items"]}        # e.g. the credit overlay: ours, but not a clip of the edit
+    paths = {m["id"]: Path(m.get("path", "")).name for kind in ("videos", "audios") for m in info["materials"].get(kind, [])}
+    texts = {m["id"]: m for m in info["materials"].get("texts", [])}
+    titles = sorted((c for c in clips.values() if c["kind"] == "text"), key=lambda c: c["start"])
+    frame = 1 / float(manifest.get("fps", 30))
+
+    seen: set[str] = set()
+    changes: list[dict] = []
+    foreign: list[dict] = []
+
+    def note(cid: str, field: str, old, new) -> None:
+        if isinstance(old, (int, float)) and isinstance(new, (int, float)) and abs(old - new) < frame * 0.99:
+            return
+        if old != new:
+            changes.append({"clip": cid, "field": field, "from": old, "to": new})
+
+    for track in info["tracks"]:
+        text_n = 0
+        for seg in sorted(track.get("segments", []), key=lambda s: s["target_timerange"]["start"]):
+            start = round(seg["target_timerange"]["start"] / US, 3)
+            length = round(seg["target_timerange"]["duration"] / US, 3)
+            if track.get("type") == "text":
+                mat = texts.get(seg.get("material_id"), {})
+                try:
+                    said = json.loads(mat.get("content", "{}")).get("text", "")
+                except ValueError:
+                    said = ""
+                cid = seg.get("tibeb_id") or (titles[text_n]["id"] if text_n < len(titles) else None)   # CapCut may drop our id: fall back to order
+                text_n += 1
+                if cid in clips and cid not in seen:
+                    seen.add(cid)
+                    note(cid, "start", clips[cid]["start"], start)
+                    note(cid, "length", clips[cid]["length"], length)
+                    note(cid, "text", clips[cid].get("text"), said)
+                else:
+                    foreign.append({"kind": "text", "text": said, "start": start, "length": length})
+                continue
+            item = by_file.get(paths.get(seg.get("material_id"), ""))
+            if not item and paths.get(seg.get("material_id"), "") in known:
+                continue
+            if not item or item["id"] in seen:
+                foreign.append({"kind": track.get("type"), "file": paths.get(seg.get("material_id"), "?"), "start": start, "length": length})
+                continue
+            cid = item["id"]
+            seen.add(cid)
+            if cid == "" or cid not in clips:
+                continue
+            c = clips[cid]
+            note(cid, "start", c["start"], start)
+            note(cid, "length", min(c["length"], float(item["length"])), length)
+            offset = round(seg["source_timerange"]["start"] / US, 3)
+            if offset >= frame and c["kind"] != "image":
+                note(cid, "in", c.get("in", 0), round(c.get("in", 0) + offset, 3))      # trimmed from the front in CapCut
+            if c["kind"] != "image" and "volume" in c:
+                note(cid, "volume", c["volume"], round(float(seg.get("volume", 1.0)), 3))
+    deleted = sorted(i["id"] for i in manifest["items"] if i.get("id") in clips and i["id"] not in seen
+                     and not (clips[i["id"]]["kind"] == "text" and any(t.get("type") == "text" for t in info["tracks"]) and i["id"] in seen))
+    deleted = [d for d in deleted if not (clips[d]["kind"] == "text" and d in seen)]
+    result = {"project": manifest.get("project"), "draft": name, "changes": changes, "deleted": deleted, "added_in_capcut": foreign,
+              "summary": f"{len(changes)} change(s), {len(deleted)} clip(s) removed, {len(foreign)} clip(s) added in CapCut"}
+    if apply and (changes or deleted):
+        backup = edit_file.with_name(f"edit.before-capcut-{time.strftime('%Y%m%d-%H%M%S')}.json")
+        shutil.copy2(edit_file, backup)
+        for ch in changes:
+            clips[ch["clip"]][ch["field"]] = ch["to"]
+        for t in doc["tracks"]:
+            t["clips"] = [c for c in t["clips"] if c["id"] not in deleted]
+        edit_file.write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
+        result.update({"applied": True, "backup": str(backup)})
+        if foreign:
+            result["note"] = "Clips added in CapCut are listed but not brought into the edit."
+    return result

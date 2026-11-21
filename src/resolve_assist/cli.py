@@ -144,8 +144,13 @@ def main(argv: list[str] | None = None) -> int:
     ep.add_argument("--no-render", action="store_true")
     cd = sub.add_parser("capcut-draft", help="EXPERIMENTAL: write a new CapCut project from a project's hand-off")
     cd.add_argument("project")
+    cd.add_argument("--styled-text", action="store_true", help="put the styled text clips on the timeline instead of editable CapCut text")
     crm = sub.add_parser("capcut-remove", help="delete CapCut projects this tool created (never others)")
     crm.add_argument("name", nargs="?")
+    cp = sub.add_parser("capcut-pull", help="show what was changed in a CapCut project we created (use --apply to update edit.json)")
+    cp.add_argument("name")
+    cp.add_argument("--apply", action="store_true")
+    sub.add_parser("capcut-list", help="CapCut projects this tool created")
     ci = sub.add_parser("capcut-inspect", help="summarise a CapCut project on disk")
     ci.add_argument("name")
     ho = sub.add_parser("handoff", help="export a project's edit as layers for CapCut / Resolve / any editor")
@@ -281,10 +286,15 @@ def main(argv: list[str] | None = None) -> int:
             res["plan"] = api.edit_plan(args.project)["plan"]
             _print(res)
         elif args.cmd == "capcut-draft":
-            _print(api.capcut_draft(args.project))
+            _print(api.capcut_draft(args.project, not args.styled_text))
         elif args.cmd == "capcut-remove":
             from . import capcut
             _print(capcut.remove(args.name))
+        elif args.cmd == "capcut-pull":
+            _print(api.capcut_pull(args.name, args.apply))
+        elif args.cmd == "capcut-list":
+            from . import capcut
+            _print({"drafts": capcut.list_projects()})
         elif args.cmd == "capcut-inspect":
             from . import capcut
             _print(capcut.inspect(args.name))

@@ -782,14 +782,20 @@ def project_intake(project: str) -> dict:
     return _intake(project)
 
 
-def capcut_draft(project: str) -> dict:
+def capcut_pull(draft: str, apply: bool = False) -> dict:
+    """What was changed in a CapCut project made by capcut_draft, compared with the edit it came from."""
+    from . import capcut
+    return capcut.pull(draft, apply)
+
+
+def capcut_draft(project: str, native_text: bool = True) -> dict:
     """EXPERIMENTAL: create a new CapCut project from the project's hand-off folder (run handoff first)."""
     from . import capcut
     from .workspace import new_project as _new
     proj = Path(_new(project)["project"])
     if not (proj / "handoff" / "manifest.json").is_file():
         raise ValueError("run handoff for this project first")
-    return capcut.build_draft(proj / "handoff", f"Tibeb {proj.name}")
+    return capcut.build_draft(proj / "handoff", f"Tibeb {proj.name}", native_text)
 
 
 def handoff(project: str, format: str = "9x16", motion_dir: str | None = None) -> dict:

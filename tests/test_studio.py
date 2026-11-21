@@ -359,9 +359,44 @@ class CapCutDraftTests(unittest.TestCase):
                 self.assertEqual(capcut.find_template().name, "mine")                                       # our drafts are never used as template
                 self.assertEqual(sorted(capcut.remove()["removed"]), ["Tibeb P", "Tibeb P 2"])
                 self.assertTrue(tpl.is_dir())
+            (hand / "text").mkdir()
+            (hand / "text" / "titles.json").write_text(json.dumps([{"id": "t1", "text": "ሰላም Hi", "start": 0.5, "length": 1, "size": 8, "color": "#F5C451", "x": 50, "y": 25, "align": "center"}]))
             with mock.patch.object(Path, "home", return_value=home), mock.patch.object(capcut, "capcut_running", return_value=True):
+                res = capcut.build_draft(hand, "Tibeb P")                      # allowed while CapCut runs: it is only a new folder
+                self.assertIn("Restart CapCut", res["next"])
+                info = json.loads((Path(res["draft"]) / "draft_info.json").read_text())
+                text_track = info["tracks"][-1]
+                self.assertEqual((text_track["type"], len(text_track["segments"])), ("text", 1))
+                content = json.loads(info["materials"]["texts"][0]["content"])
+                self.assertEqual((content["text"], content["styles"][0]["range"]), ("ሰላም Hi", [0, 6]))
+                self.assertEqual(text_track["segments"][0]["clip"]["transform"], {"x": 0.0, "y": 0.5})
                 with self.assertRaises(RuntimeError):
-                    capcut.build_draft(hand, "Tibeb P")
+                    capcut.remove()                                            # deleting needs CapCut closed
+                # the user edits in CapCut: moves the picture, lowers the music, retypes the title
+                (home / "edit.json").write_text(json.dumps({"version": 1, "duration": 2, "background": "#000", "tracks": [
+                    {"id": "text", "name": "Text", "kind": "text", "clips": [{"id": "t1", "kind": "text", "text": "ሰላም Hi", "start": 0.5, "length": 1}]},
+                    {"id": "video", "name": "Video", "kind": "video", "clips": [{"id": "v1", "kind": "image", "src": "x", "start": 0, "length": 2}]},
+                    {"id": "music", "name": "Music", "kind": "audio", "clips": [{"id": "m1", "kind": "audio", "src": "y", "start": 0, "length": 2, "in": 0, "volume": 0.4}]}]}))
+                manifest = json.loads((hand / "manifest.json").read_text())
+                manifest["items"][0]["id"], manifest["items"][1]["id"] = "v1", "m1"
+                (hand / "manifest.json").write_text(json.dumps(manifest))
+                d2 = Path(capcut.build_draft(hand, "Tibeb Edited")["draft"])
+                info = json.loads((d2 / "draft_info.json").read_text())
+                info["tracks"][0]["segments"][0]["target_timerange"]["start"] = 500000
+                info["tracks"][1]["segments"][0]["volume"] = 0.2
+                info["tracks"][2]["segments"][0].pop("tibeb_id")                # CapCut drops fields it does not know
+                info["materials"]["texts"][0]["content"] = json.dumps({"text": "New title", "styles": []})
+                (d2 / "draft_info.json").write_text(json.dumps(info))
+                got = capcut.pull("Tibeb Edited")
+                self.assertEqual(sorted((c["clip"], c["field"], c["to"]) for c in got["changes"]), [("m1", "volume", 0.2), ("t1", "text", "New title"), ("v1", "start", 0.5)])
+                self.assertEqual((got["deleted"], got["added_in_capcut"]), ([], []))
+                self.assertNotIn("applied", got)
+                done = capcut.pull("Tibeb Edited", apply=True)
+                self.assertTrue(Path(done["backup"]).is_file())
+                after = json.loads((home / "edit.json").read_text())
+                self.assertEqual((after["tracks"][1]["clips"][0]["start"], after["tracks"][2]["clips"][0]["volume"], after["tracks"][0]["clips"][0]["text"]), (0.5, 0.2, "New title"))
+                with self.assertRaises(ValueError):
+                    capcut.pull("mine")                                        # never reads back the user's own projects
 
 
 def encode_png_1x1() -> bytes:

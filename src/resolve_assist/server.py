@@ -304,6 +304,22 @@ def new_project(name: str) -> str:
 
 
 @mcp.tool()
+def capcut_draft(project: str, native_text: bool = True) -> str:
+    """EXPERIMENTAL: after `handoff`, write a new CapCut desktop project ("Tibeb <project>") with every clip on
+    its own track. Titles become editable CapCut text (plain look) unless native_text is false. Only new
+    projects are created; the user restarts CapCut if it was open. Say clearly that this is experimental."""
+    return _run(api.capcut_draft, project=project, native_text=native_text)
+
+
+@mcp.tool()
+def capcut_pull(draft: str, apply: bool = False) -> str:
+    """Read back a CapCut project created by capcut_draft and list what the user changed there (moved,
+    trimmed, deleted clips, volume, text, clips added). Show the list first; call again with apply=true only
+    after the user agrees. A copy of the previous edit.json is kept."""
+    return _run(api.capcut_pull, draft=draft, apply=apply)
+
+
+@mcp.tool()
 def handoff(project: str, format: str = "9x16") -> str:
     """Export the project's edit (edit.json, made in the Tibeb editor) as layers into projects/<project>/handoff/:
     cut picture clips, each text as a transparent .mov, audio stems, .cube looks, timeline.otio/.fcpxml and a
