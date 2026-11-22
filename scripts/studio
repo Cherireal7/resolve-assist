@@ -37,6 +37,11 @@ case "$cmd" in
     cd "$WORKSPACE" || exit 1
     command -v claude >/dev/null || { say "Claude Code is not on PATH. Workspace: $WORKSPACE"; exit 1; }
     STUDIO_EDITOR="$EDITOR_APP" exec claude "$@" ;;
+  codex)
+    need_ra; "$RA" workspace >/dev/null 2>&1
+    cd "$WORKSPACE" || exit 1
+    command -v codex >/dev/null || { say "Codex is not on PATH. Workspace: $WORKSPACE"; exit 1; }
+    STUDIO_EDITOR="$EDITOR_APP" exec codex "$@" ;;
   editor)
     if [[ $# -eq 0 ]]; then say "Default editor: $EDITOR_APP   (change: studio editor resolve|capcut|none)"; else set_editor "$1"; fi ;;
   new)
@@ -98,6 +103,7 @@ studio library [build]       open the asset browser (build: regenerate/index fir
 studio find <words>          search the library from the terminal
 studio kit "Name" <words>…   copy matching assets into projects/<Name>/kit (for CapCut)
 studio prep <video> "Name"   talking-head clip: cut silences, transcript, open the planning page
+studio codex                 start the session in Codex instead of Claude Code (say: cutroom)
 studio motion                open Motion Studio (Remotion) for graphics and text templates
 studio make <config.json>    render a Motion Studio config (add --to-resolve to file it in the library)
 studio frames <project>      open a HyperFrames project (HTML graphics) in its live preview

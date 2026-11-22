@@ -19,6 +19,12 @@ WORKSPACE_GUIDE = """# Video studio workspace
 Type `studio` in a terminal (or click the Studio icon) and this session starts here with this guide.
 `studio help` lists the other one-word commands (new, open, library, kit, motion, fonts, doctor, editor).
 
+## Start word
+Say `cutroom` (alone, or followed by an idea, a project or a file) to start a video: it loads the `cutroom` skill,
+which holds the style rules (`style.md`), the route for each kind of video and the phone-footage workflow. The same
+word, skills and tools work in Claude Code (`studio`) and in Codex (`studio codex`); this guide is also written as
+`AGENTS.md` for Codex.
+
 ## Which editor?
 The editor is a choice, not a requirement: `studio editor resolve|capcut|none` sets the default,
 stored in `~/.config/studio/config` (`editor=...`). Read that file at the start of a session.
@@ -182,6 +188,7 @@ def init_workspace() -> dict:
     guide = root / "CLAUDE.md"
     guide.write_text(WORKSPACE_GUIDE, encoding="utf-8")
     (root / "README.md").write_text(WORKSPACE_GUIDE, encoding="utf-8")
+    (root / "AGENTS.md").write_text(WORKSPACE_GUIDE, encoding="utf-8")   # the same guide for Codex
     return {"workspace": str(root), "guide": str(guide)}
 
 
