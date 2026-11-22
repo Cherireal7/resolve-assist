@@ -77,13 +77,19 @@ Higgsfield (AI images/clips, costs credits) → Motion Studio (`~/Documents/Gith
 animated graphics, text overlays, `npm run make -- <config> --to-resolve`) → this workspace + your editor
 (edit, grade, captions, deliver). Full guide: `~/Documents/Github/motion-studio/docs/PIPELINE.md`.
 
-HyperFrames (`~/Documents/Github/hyperframes-studio`, HTML rendered to video, free and local) is the second
-graphics engine: use it for one-off graphics, kinetic type, charts, UI demos and ready-made registry blocks;
-keep Motion Studio for its existing templates. Start with the `/hyperframes:hyperframes` skill, work in
-`projects/<name>/` there, copy fonts and sounds from `library/` into the project's `assets/` (Amharic needs an
-`@font-face` to a library Ethiopic font), render to MP4 and drop it in this workspace's project `inbox/`.
-Never use its paid parts (cloud render, HeyGen sign-in, Pro templates, `reverse-any-video`, `style-sampling`)
-without asking. Details: that repo's `README.md`.
+Use both graphics engines in the same video, each for what it does best:
+- Motion Studio builds the body: the story templates, camera moves and anything the user already liked.
+- HyperFrames (`~/Documents/Github/hyperframes-studio`, HTML rendered to video, free and local) adds what the
+  templates lack: one-off scenes, kinetic type, counters, charts, UI demos and registry blocks (search with
+  `npx hyperframes catalog <word>` before hand-building an effect).
+- Joining them: a full HyperFrames scene renders to MP4 and is cut in as a clip; an element that sits on top
+  of other footage renders with `--format mov` (ProRes 4444 with transparency) and goes on a track above.
+  Either file is dropped in the project's `inbox/` here, then placed through `edit.json` or the editor.
+- Start HyperFrames work with the `/hyperframes:hyperframes` skill, in `projects/<name>/` of that repo. Copy
+  fonts and sounds from `library/` into the project's `assets/` (Amharic needs an `@font-face` to a library
+  Ethiopic font). Keep one look across both engines: same fonts, colours and paper textures.
+- Never use HyperFrames' paid parts (cloud render, HeyGen sign-in, Pro templates, `reverse-any-video`,
+  `style-sampling`) without asking. Details: that repo's `README.md`.
 
 ## Folders
 | Folder | What |

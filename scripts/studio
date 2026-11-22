@@ -70,6 +70,11 @@ case "$cmd" in
     [[ $# -ge 2 ]] || { say 'Usage: studio prep <video file> "Project"   (cuts silences, makes the planning page)'; exit 2; }
     need_ra; v="$1"; shift; "$RA" prep "$v" "$*" && open "$WORKSPACE/projects/$*/prep/plan.html" ;;
   motion) cd "$MOTION" && exec npm run dev ;;
+  frames)
+    FRAMES="$(conf frames)"; FRAMES="${FRAMES:-$HOME/Documents/Github/hyperframes-studio}"
+    [[ $# -ge 1 ]] || { say "Usage: studio frames <project>   (projects: ${(j:, :)${(@f)$(ls "$FRAMES/projects")}})"; exit 2; }
+    [[ -d "$FRAMES/projects/$1" ]] || { say "No HyperFrames project '$1' in $FRAMES/projects"; exit 1; }
+    cd "$FRAMES/projects/$1" && HYPERFRAMES_NO_TELEMETRY=1 exec "$FRAMES/node_modules/.bin/hyperframes" preview ;;
   make)
     [[ $# -ge 1 ]] || { say "Usage: studio make examples/<config>.json [--to-resolve]"; exit 2; }
     cd "$MOTION" && exec npm run make -- "$@" ;;
@@ -95,6 +100,7 @@ studio kit "Name" <words>…   copy matching assets into projects/<Name>/kit (fo
 studio prep <video> "Name"   talking-head clip: cut silences, transcript, open the planning page
 studio motion                open Motion Studio (Remotion) for graphics and text templates
 studio make <config.json>    render a Motion Studio config (add --to-resolve to file it in the library)
+studio frames <project>      open a HyperFrames project (HTML graphics) in its live preview
 studio fonts                 install the library typefaces into ~/Library/Fonts
 studio doctor                check the whole setup
 Workspace: $WORKSPACE
