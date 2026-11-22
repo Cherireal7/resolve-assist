@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Share every agent skill between Claude Code, Codex and Doxa Code.
+
+A skill is a folder with a SKILL.md. Wherever one is installed, this links it into all the other agents' skill
+folders, so one install serves every agent. Nothing is moved, copied or deleted; only missing links are added and
+links whose target has gone are removed. Run it after installing a skill anywhere:  studio skills
+"""
+from __future__ import annotations
+import glob, os, sys
+from pathlib import Path
+
+HOME = Path.home()
+HUB = HOME / ".agents" / "skills"                       # the cross-agent folder newer Codex and other agents read
+DOXA = HOME / "Library" / "Application Support" / "Doxa Code" / "accounts" / "codex"
+CLAUDE, PLUGINS = HOME / ".claude" / "skills", HOME / ".claude" / "plugins"
+CODEX_HOMES = [HOME / ".codex" / "skills", *[Path(p) / "skills" for p in sorted(glob.glob(str(DOXA / "*")))]]
+# Codex reads the hub as well as its own folder, so linking into both would list every skill twice there.
+HOMES = [CLAUDE, HUB] + (CODEX_HOMES if os.environ.get("SKILLS_SYNC_CODEX_HOMES") == "1" else [])
+EXTRA_SOURCES = [Path(p) for p in glob.glob(str(HOME / ".claude" / "plugins" / "marketplaces" / "*" / "skills"))]
+SKIP = {".system", "synced"}                            # each agent's own built-ins stay where they are
+dry = "--dry-run" in sys.argv
+
+def skills_in(folder: Path) -> dict[str, Path]:
+    found = {}
+    if folder.is_dir():
+        for entry in sorted(folder.iterdir()):
+            if entry.name in SKIP or entry.name.startswith("."):
+                continue
+            if (entry / "SKILL.md").is_file():
+                found[entry.name] = entry.resolve()
+    return found
+
+# 1. drop links that point nowhere
+for home in HOMES:
+    if home.is_dir():
+        for entry in home.iterdir():
+            if entry.is_symlink() and not entry.exists():
+                print(f"remove dead link  {entry}")
+                if not dry: entry.unlink()
+
+# 2. one real folder per skill name: the first place it is found wins
+real: dict[str, Path] = {}
+for folder in [*HOMES, *EXTRA_SOURCES]:
+    for name, target in skills_in(folder).items():
+        if name in real and real[name] != target:
+            print(f"note: '{name}' exists twice; using {real[name]} (also at {target})")
+        real.setdefault(name, target)
+
+# 3. link every skill into every home that lacks it
+added = 0
+for home in HOMES:
+    if not home.parent.is_dir():
+        continue
+    if not dry: home.mkdir(exist_ok=True)
+    for name, target in real.items():
+        link = home / name
+        if link.exists() or link.is_symlink():
+            continue
+        if home == CLAUDE and PLUGINS in target.parents:
+            continue                                    # Claude already loads its own plugins' skills
+        print(f"link  {link}  ->  {target}")
+        if not dry: os.symlink(target, link)
+        added += 1
+print(f"{len(real)} skills shared across {sum(1 for h in HOMES if h.parent.is_dir())} agent folders; {added} links {'would be ' if dry else ''}added.")

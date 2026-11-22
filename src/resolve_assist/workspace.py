@@ -24,6 +24,9 @@ Say `cutroom` (alone, or followed by an idea, a project or a file) to start a vi
 which holds the style rules (`style.md`), the route for each kind of video and the phone-footage workflow. The same
 word, skills and tools work in Claude Code (`studio`) and in Codex (`studio codex`); this guide is also written as
 `AGENTS.md` for Codex.
+Skills are shared: `~/.agents/skills` links every skill installed for any agent, and `studio skills` refreshes the
+links after a new skill is installed anywhere (Claude Code, Codex or Doxa Code). Check a downloaded skill before
+installing it.
 
 ## Which editor?
 The editor is a choice, not a requirement: `studio editor resolve|capcut|none` sets the default,
