@@ -88,6 +88,11 @@ Use both graphics engines in the same video, each for what it does best:
 - Start HyperFrames work with the `/hyperframes:hyperframes` skill, in `projects/<name>/` of that repo. Copy
   fonts and sounds from `library/` into the project's `assets/` (Amharic needs an `@font-face` to a library
   Ethiopic font). Keep one look across both engines: same fonts, colours and paper textures.
+- Real 3D scenes (a desk, a room, a product, camera moves with depth of field): the `3d-animator` skill
+  (three.js rendered frame by frame, no Blender; installed 2026-11-22 from a shared zip, reviewed). Its render
+  is an MP4 that joins the video like any other clip. Install with `PUPPETEER_SKIP_DOWNLOAD=1 npm install` and
+  set `CHROME_PATH` to the installed Chrome. Its ElevenLabs voice and sound steps cost money: use `narrate`
+  and the library sounds instead unless the user says otherwise.
 - Never use HyperFrames' paid parts (cloud render, HeyGen sign-in, Pro templates, `reverse-any-video`,
   `style-sampling`) without asking. Details: that repo's `README.md`.
 
