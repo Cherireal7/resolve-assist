@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""A first cut from a folder of phone clips and one track, in the house style.
+
+usage: studio cut "<Project>" [--clips <folder or files...>] [--track <audio file>] [--shot 2.6]
+
+What it does (everything local):
+  1. Converts every clip once to SDR 1080x1920 30 fps (projects/<Project>/footage/full), cropping landscape clips to vertical.
+  2. Looks through each clip twice a second: sharpness, brightness, movement and whether a face is in view; keeps the usable moments.
+  3. Listens to the track: if someone speaks, cuts land on words (about one shot per --shot seconds); otherwise on the beats.
+  4. Lays the shots out in filming order, never two neighbours from the same moment, opening on a face when there is one.
+  5. Captions: one or two words at a time on the speech, the last word of each sentence as the key word (capitals, accent colour, 3D flip).
+  6. Renders exports/<slug>-auto-v1-9x16.mp4 (never overwrites: v2, v3 ...), writes build/auto-cut.json (edit it and re-run with --from-plan)
+     and build/layers.json so `studio layers` can export it for CapCut.
+Hard cuts only, saturation slightly under natural, no text backgrounds, credit at the end: the rules in the cutroom skill's style.md.
+"""
+import argparse, json, os, re, shutil, subprocess, sys
+from pathlib import Path
+import numpy as np, cv2
+
+HOME = Path.home(); WS = Path(os.environ.get("RESOLVE_ASSIST_OUTPUT", HOME / "Documents/resolve-assist"))
+HFROOT = HOME / "Documents/Github/hyperframes-studio"; HF = HFROOT / "node_modules/.bin/hyperframes"
+RA = HOME / "Documents/Github/resolve-assist/.venv/bin/resolve-assist"; LIBFONTS = WS / "library/fonts"
+VIDEO = {".mov", ".mp4", ".m4v"}; AUDIO = {".mp3", ".wav", ".m4a", ".aac"}
+GRADE = "eq=contrast=1.05:saturation=0.90:gamma=0.98,curves=all='0/0 0.25/0.22 0.75/0.78 1/1',vignette=PI/6"
+ap = argparse.ArgumentParser(); ap.add_argument("project"); ap.add_argument("--clips", nargs="*"); ap.add_argument("--track"); ap.add_argument("--shot", type=float, default=2.6)
+ap.add_argument("--from-plan", action="store_true"); ap.add_argument("--credit", default="Edit by Cheri"); a = ap.parse_args()
+P = WS / "projects" / a.project; slug = re.sub(r"[^a-z0-9]+", "-", a.project.lower()).strip("-")
+FULL = P / "footage/full"; B = P / "build"; EXP = P / "exports"
+for d in (FULL, B, EXP): d.mkdir(parents=True, exist_ok=True)
+def sh(cmd, **kw): return subprocess.run(cmd, check=True, **kw)
+def probe(f, entries):
+    return json.loads(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", entries, "-of", "json", str(f)], capture_output=True, text=True).stdout or "{}")
+
+# ---------- 1. gather and convert
+if a.clips: raw = [f for c in a.clips for f in ([Path(c)] if Path(c).is_file() else sorted(Path(c).iterdir())) if f.suffix.lower() in VIDEO]
+else: raw = [f for d in (P / "inbox", P / "footage") if d.is_dir() for f in sorted(d.iterdir()) if f.suffix.lower() in VIDEO]
+track = Path(a.track) if a.track else next((f for d in (P / "music", P / "inbox") if d.is_dir() for f in sorted(d.iterdir()) if f.suffix.lower() in AUDIO), None)
+if not track: sys.exit("No track found: put one in the project's music/ folder or pass --track.")
+clips = []
+for f in raw:
+    out = FULL / (re.sub(r"[^A-Za-z0-9]+", "-", f.stem).strip("-") + ".mp4")
+    if not out.exists():
+        info = (probe(f, "stream=width,height,color_transfer:stream_side_data=rotation").get("streams") or [{}])[0]
+        w, h = int(info.get("width", 0)), int(info.get("height", 0))
+        rot = next((abs(int(float(d["rotation"]))) for d in info.get("side_data_list", []) if "rotation" in d), 0)
+        if rot in (90, 270): w, h = h, w
+        vf = "crop=ih*9/16:ih,scale=1080:1920:flags=lanczos" if w > h else "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920"
+        if info.get("color_transfer") in ("arib-std-b67", "smpte2084"): vf += ",colorspace=all=bt709:iall=bt2020:itrc=bt2020-10:format=yuv420p"
+        sh(["ffmpeg", "-v", "error", "-y", "-hwaccel", "videotoolbox", "-i", str(f), "-vf", vf, "-r", "30", "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "14", str(out)])
+    made = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags=creation_time", "-of", "csv=p=0", str(f)], capture_output=True, text=True).stdout.strip() or str(f.stat().st_mtime)
+    clips.append({"file": out, "name": out.stem, "made": made})
+if not clips:   # nothing new named: use what is already converted
+    clips = [{"file": f, "name": f.stem, "made": f.stem} for f in sorted(FULL.glob("*.mp4"))]
+if not clips: sys.exit("No clips found.")
+clips.sort(key=lambda c: c["made"]); print(len(clips), "clips,", "track:", track.name, flush=True)
+
+# ---------- 2. look through every clip
+TOOLS = Path(__file__).resolve().parents[1] / "tools/faces"
+def face_tool():
+    """Apple Vision face finder, built on first use. None when it cannot be built (then no shot is preferred for a face)."""
+    exe, src = TOOLS / "bin/faces", TOOLS / "faces.swift"
+    if not exe.is_file() or exe.stat().st_mtime < src.stat().st_mtime:
+        if not shutil.which("swiftc"): return None
+        exe.parent.mkdir(exist_ok=True)
+        if subprocess.run(["swiftc", "-O", str(src), "-o", str(exe)], capture_output=True).returncode != 0: return None
+    return exe
+FACES = face_tool(); TMPF = B / "faces-tmp"
+def analyse(c):
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(c["file"]), "-vf", "fps=2,scale=270:480,format=gray", "-f", "rawvideo", "-"], capture_output=True).stdout
+    fr = np.frombuffer(raw, np.uint8).reshape(-1, 480, 270); n = len(fr); pts = []; seen = {}
+    if FACES and n:
+        if TMPF.exists(): shutil.rmtree(TMPF)
+        TMPF.mkdir(parents=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-i", str(c["file"]), "-vf", "fps=1,scale=540:960", "-q:v", "4", str(TMPF / "%04d.jpg")], capture_output=True)
+        files = sorted(TMPF.glob("*.jpg"))
+        if files:
+            for line in subprocess.run([str(FACES), *map(str, files)], capture_output=True, text=True).stdout.splitlines():
+                pth, cnt, area = line.split("\t"); seen[int(Path(pth).stem) - 1] = float(area) if int(cnt) else 0.0
+        shutil.rmtree(TMPF)
+    for i in range(n):
+        g = fr[i]; sharp = float(cv2.Laplacian(g, cv2.CV_64F).var()); bright = float(g.mean())
+        move = float(np.abs(g.astype(np.int16) - fr[i - 1].astype(np.int16)).mean()) if i else 0.0
+        pts.append({"t": i / 2, "sharp": sharp, "bright": bright, "move": move, "face": seen.get(int(i / 2), 0.0) > 0.004})
+    c["dur"] = n / 2; c["pts"] = pts
+for c in clips: analyse(c)
+def moments(c, length):
+    """Usable start times in a clip, best first: sharp, lit, with some movement but not a blur; a face is a bonus."""
+    out = []; step = 0.5; t = 0.2
+    while t + length <= c["dur"] - 0.1:
+        w = [p for p in c["pts"] if t <= p["t"] <= t + length]
+        if w:
+            sharp = np.mean([p["sharp"] for p in w]); bright = np.mean([p["bright"] for p in w]); move = np.mean([p["move"] for p in w]); hasface = np.mean([p["face"] for p in w])
+            if bright > 28 and sharp > 12:
+                score = min(sharp, 400) / 400 + min(move, 14) / 14 * 0.8 - max(0, move - 22) / 20 + hasface * 0.9 + (0.2 if 60 < bright < 190 else 0)
+                out.append({"t": round(t, 2), "score": round(float(score), 3), "face": float(hasface)})
+        t += step
+    return sorted(out, key=lambda m: -m["score"])
+
+# ---------- 3. listen to the track
+dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(track)], capture_output=True, text=True).stdout)
+wav = np.frombuffer(subprocess.run(["ffmpeg", "-v", "error", "-i", str(track), "-ac", "1", "-ar", "16000", "-f", "f32le", "-"], capture_output=True).stdout, np.float32)
+words = []
+try:
+    from faster_whisper import WhisperModel
+    segs, info = WhisperModel("small", device="cpu", compute_type="int8").transcribe(wav, word_timestamps=True, vad_filter=True)
+    env = np.convolve(np.abs(wav), np.ones(160) / 160, "same")
+    for s in segs:
+        if s.no_speech_prob > 0.6: continue
+        for w in s.words:
+            i0, i1 = int(max(0, w.start - 0.12) * 16000), int(min(dur, w.start + 0.2) * 16000); seg = env[i0:i1]; st = w.start
+            if len(seg) > 10: st = (i0 + int(np.argmax(seg > seg.min() + 0.35 * (seg.max() - seg.min())))) / 16000
+            words.append({"w": w.word.strip(), "s": round(st, 2), "e": round(w.end, 2)})
+except Exception as e:
+    print("no word timings:", str(e)[:80])
+spoken = bool(len(words) >= 8 and (words[-1]["e"] - words[0]["s"]) > dur * 0.3)
+beats = json.loads(subprocess.run([str(RA), "beats", str(track)], capture_output=True, text=True).stdout or "{}").get("beats", [])
+if spoken:
+    cuts = [0.0]; grid = [w["s"] for w in words]
+    # prefer the start of a sentence, then any word, near each multiple of the shot length
+    starts = [words[i]["s"] for i in range(1, len(words)) if re.search(r"[.!?]$", words[i - 1]["w"])]
+    while cuts[-1] + a.shot * 1.6 < dur:
+        want = cuts[-1] + a.shot
+        near = [t for t in starts if abs(t - want) <= a.shot * 0.45 and t > cuts[-1] + 1.0] or [t for t in grid if abs(t - want) <= a.shot * 0.45 and t > cuts[-1] + 1.0]
+        cuts.append(min(near, key=lambda t: abs(t - want)) if near else round(want, 2))
+else:
+    step = max(1, round(a.shot / (np.median(np.diff(beats)) if len(beats) > 2 else a.shot)))
+    cuts = [0.0] + [b for b in beats[step - 1::step] if 1.0 < b < dur - 1.2] if len(beats) > 4 else list(np.arange(0, dur - 1, a.shot))
+print("track", round(dur, 2), "s |", "speech" if spoken else "no speech", "|", len(cuts), "shots", flush=True)
+
+# ---------- 4. lay the shots out
+plan_file = B / "auto-cut.json"
+if a.from_plan and plan_file.exists():
+    plan = json.loads(plan_file.read_text()); shots = plan["shots"]; cuts = [s["start"] for s in shots]
+else:
+    lens = [round((cuts[i + 1] if i + 1 < len(cuts) else dur) - cuts[i], 3) for i in range(len(cuts))]
+    used = {c["name"]: [] for c in clips}; shots = []
+    order = [clips[int(i * len(clips) / len(cuts))] for i in range(len(cuts))]          # filming order, spread over the whole track
+    facey = sorted(clips, key=lambda c: -np.mean([p["face"] for p in c["pts"]]) if c["pts"] else 0)
+    if facey and np.mean([p["face"] for p in facey[0]["pts"]]) > 0.25: order[0] = facey[0]   # open on a face
+    for i, c in enumerate(order):
+        cand = c
+        for tries in range(len(clips) + 1):
+            ms = [m for m in moments(cand, lens[i]) if all(abs(m["t"] - u) >= max(4.0, lens[i] + 1.5) for u in used[cand["name"]])]
+            prev_same = shots and shots[-1]["clip"] == cand["name"]
+            if ms and not (prev_same and abs(ms[0]["t"] - shots[-1]["in"]) < 4.0): break
+            cand = clips[(clips.index(cand) + 1) % len(clips)]
+        else: ms = moments(c, lens[i]) or [{"t": 0.2, "score": 0, "face": 0}]; cand = c
+        m = ms[0]; used[cand["name"]].append(m["t"])
+        shots.append({"start": round(cuts[i], 3), "length": lens[i], "clip": cand["name"], "in": m["t"], "face": round(m["face"], 2), "move": "push" if lens[i] > 3.2 else "hold"})
+    plan = {"track": str(track), "duration": round(dur, 3), "spoken": spoken, "shots": shots, "words": words}
+    plan_file.write_text(json.dumps(plan, indent=1, default=lambda o: o.item() if hasattr(o, 'item') else str(o)))
+
+# ---------- 5. picture
+os.chdir(B); lst = []
+for i, s in enumerate(shots):
+    n = round(s["length"] * 30); d = n / 30; z = f"1+0.07*t/{d}" if s.get("move") == "push" else "1"
+    sh(["ffmpeg", "-v", "error", "-y", "-ss", str(s["in"]), "-t", str(d + 0.1), "-i", str(FULL / f"{s['clip']}.mp4"), "-vf",
+        f"fps=30,scale=w='2*trunc(540*({z}))':h=-2:eval=frame,crop=1080:1920,{GRADE},format=yuv420p", "-an", "-frames:v", str(n), "-c:v", "libx264", "-crf", "12", "-preset", "fast", f"ac_{i:02d}.mov"])
+    lst.append(f"file 'ac_{i:02d}.mov'")
+Path("ac.txt").write_text("\n".join(lst) + "\n")
+sh(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", "ac.txt", "-vf", "fps=30,noise=alls=5:allf=t,format=yuv420p", "-c:v", "libx264", "-crf", "12", "-preset", "fast", "auto-picture.mov"])
+for f in Path(".").glob("ac_*.mov"): f.unlink()
+
+# ---------- 6. captions page (HyperFrames)
+FX = HFROOT / "projects" / f"{slug}-auto-fx"; (FX / "assets/fonts").mkdir(parents=True, exist_ok=True)
+for src, dst in ((HFROOT / "projects/before-you-win-fx/assets/fonts/Anton.ttf", "Anton.ttf"), (HFROOT / "projects/before-you-win-fx/assets/fonts/PlayfairItalic.ttf", "PlayfairItalic.ttf")):
+    if src.is_file() and not (FX / "assets/fonts" / dst).exists(): shutil.copy2(src, FX / "assets/fonts" / dst)
+for f in ("hyperframes.json", "meta.json", "package.json"):
+    if not (FX / f).exists() and (HFROOT / "projects/before-you-win-fx" / f).is_file(): shutil.copy2(HFROOT / "projects/before-you-win-fx" / f, FX / f)
+groups = []; i = 0; end_credit = dur - 2.0
+while i < len(words):
+    w = words[i]; sent_end = bool(re.search(r"[.!?]$", w["w"]))
+    if sent_end or i + 1 >= len(words) or re.search(r"[.!?,]$", words[i]["w"]) or len(w["w"]) > 8: g = [w]; i += 1
+    else:
+        nxt = words[i + 1]
+        if re.search(r"[.!?]$", nxt["w"]) and len(nxt["w"]) > 4: g = [w]; i += 1          # leave the sentence's last word on its own
+        elif nxt["s"] - w["e"] > 0.15: g = [w]; i += 1                                   # a breath between them: do not pair across it
+        else: g = [w, nxt]; i += 2
+    text = " ".join(x["w"] for x in g); key = bool(re.search(r"[.!?]$", g[-1]["w"])) and len(g) == 1 and len(re.sub(r"\W", "", text)) > 2
+    groups.append([g[0]["s"], text, key])
+els, tw = [], []
+for k, (st, text, key) in enumerate(groups):
+    en = min(groups[k + 1][0] if k + 1 < len(groups) else st + 1.6, st + 2.2, end_credit - 0.05)
+    if en - st < 0.12: continue
+    size = (132 if len(text) > 9 else 150) if key else 76; top = 1185 - int(size * (0.5 if key else 0.6)); safe = text.replace("&", "&amp;").replace("<", "&lt;")
+    els.append(f'      <div id="g{k}" class="txt {"key" if key else "lead"} clip" data-start="{round(st, 2)}" data-duration="{round(en - st, 2)}" data-track-index="0" style="top: {top}px; font-size: {size}px"><span id="g{k}i" class="in{" y" if key else ""}">{safe}</span></div>')
+    tw.append(f'      up("#g{k}i", {round(st, 2)});' if not key else f'      show("#g{k}i", {round(st, 2)}); tl.fromTo("#g{k}i", {{ rotationX: -88, transformOrigin: "50% 100%" }}, {{ rotationX: 0, duration: 0.22, ease: "back.out(2)" }}, {round(st, 2)});')
+credit = f'      <div id="credit" class="txt lead clip" data-start="{round(end_credit, 2)}" data-duration="{round(dur - end_credit, 2)}" data-track-index="0" style="top: 1150px; font-size: 52px"><span id="crediti" class="in">{a.credit}</span></div>' if a.credit else ""
+(FX / "index.html").write_text(f'''<!doctype html>
+<html lang="en" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      @font-face {{ font-family: "Anton Studio"; src: url("assets/fonts/Anton.ttf"); }}
+      @font-face {{ font-family: "Playfair Italic Studio"; src: url("assets/fonts/PlayfairItalic.ttf"); font-weight: 400 900; font-style: italic; }}
+      * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+      html, body {{ margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: transparent; }}
+      #root {{ position: relative; width: 1080px; height: 1920px; overflow: hidden; background: transparent; }}
+      .txt {{ position: absolute; left: 0; width: 1080px; text-align: center; color: #fff; line-height: 1; white-space: nowrap; perspective: 1100px;
+        text-shadow: 0 0 30px rgba(0, 0, 0, 0.85), 0 0 12px rgba(0, 0, 0, 0.7), 0 3px 8px rgba(0, 0, 0, 0.7), 0 1px 2px rgba(0, 0, 0, 0.8); }}
+      .in {{ display: inline-block; }}
+      .lead {{ font-family: "Playfair Italic Studio"; font-style: italic; font-weight: 800; }}
+      .key {{ font-family: "Anton Studio"; text-transform: uppercase; letter-spacing: 0.01em; }}
+      .y {{ color: #f5d547; }}
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{round(dur, 2)}" data-width="1080" data-height="1920">
+{chr(10).join(els)}
+{credit}
+    </div>
+    <script>
+      const tl = gsap.timeline({{ paused: true }});
+      const up = (sel, at) => tl.fromTo(sel, {{ opacity: 0, y: 10 }}, {{ opacity: 1, y: 0, duration: 0.1, ease: "power2.out" }}, at);
+      const show = (sel, at) => tl.fromTo(sel, {{ opacity: 0 }}, {{ opacity: 1, duration: 0.06, ease: "none" }}, at);
+{chr(10).join(tw)}
+      {"up('#crediti', " + str(round(end_credit, 2)) + ");" if a.credit else ""}
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
+''')
+(FX / "exports").mkdir(exist_ok=True)
+r = subprocess.run([str(HF), "render", "--format", "mov", "-o", str(FX / "exports/captions.mov")], cwd=FX, env=dict(os.environ, HYPERFRAMES_NO_TELEMETRY="1"), capture_output=True, text=True)
+if not (FX / "exports/captions.mov").is_file(): sys.exit("caption render failed: " + (r.stdout + r.stderr)[-400:])
+
+# ---------- 7. final file, plan for layers
+v = 1
+while (EXP / f"{slug}-auto-v{v}-9x16.mp4").exists(): v += 1
+out = EXP / f"{slug}-auto-v{v}-9x16.mp4"
+sh(["ffmpeg", "-v", "error", "-y", "-i", "auto-picture.mov", "-i", str(FX / "exports/captions.mov"), "-i", str(track), "-filter_complex",
+    f"[0:v]tpad=stop_mode=clone:stop_duration=0.4[p];[p][1:v]overlay=format=auto,fade=t=out:st={dur - 0.4}:d=0.37,format=yuv420p[v];[2:a]loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=out:st={dur - 0.7}:d=0.67[a]",
+    "-map", "[v]", "-map", "[a]", "-t", str(round(dur, 2)), "-c:v", "libx264", "-crf", "21", "-preset", "medium", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", str(out)])
+layers = {"name": f"{a.project} auto", "duration": round(dur, 2), "fps": 30, "size": [1080, 1920], "grade": GRADE,
+          "shots": [{"file": f"footage/full/{s['clip']}.mp4", "start": s["start"], "in": s["in"], "move": s.get("move", "hold"), "name": s["clip"]} for s in shots],
+          "fx": {"project": str(FX), "groups": [], "captions": {"class": "txt", "key_class": "key", "track": "Captions (styled)", "skip": ["credit"], "y": 61.7}},
+          "audio": [{"file": os.path.relpath(track, P), "track": "Music", "start": 0, "volume": 1, "fadeOut": 0.67}]}
+if not (B / "layers.json").exists(): (B / "layers.json").write_text(json.dumps(layers, indent=1))
+else: (B / "layers.auto.json").write_text(json.dumps(layers, indent=1))
+print(f"{out}\n{len(shots)} shots, {len(els)} captions, opens on a face: {shots[0].get('face', 0) > 0.3}\nplan: {plan_file}  (edit and re-run with --from-plan)")

@@ -49,6 +49,9 @@ case "$cmd" in
     [[ -n "$CH" ]] && export CODEX_HOME="$CH"
     STUDIO_EDITOR="$EDITOR_APP" exec codex "$@" ;;
   skills) exec "$ASSIST/scripts/skills-sync" "$@" ;;
+  cut)
+    [[ $# -ge 1 ]] || { say 'Usage: studio cut "Project" [--clips folder-or-files] [--track file] [--shot 2.6] [--from-plan]   (a first cut in the house style)'; exit 2; }
+    exec "$HOME/.local/share/studio/venv/bin/python" "$ASSIST/scripts/auto-cut" "$@" ;;
   layers)
     [[ $# -ge 1 ]] || { say 'Usage: studio layers "Project"   (needs projects/<Project>/build/layers.json; makes handoff/, CapCut projects and edit.json)'; exit 2; }
     exec "$ASSIST/.venv/bin/python" "$ASSIST/scripts/layers-export" "$*" ;;
@@ -114,6 +117,7 @@ studio find <words>          search the library from the terminal
 studio kit "Name" <words>…   copy matching assets into projects/<Name>/kit (for CapCut)
 studio prep <video> "Name"   talking-head clip: cut silences, transcript, open the planning page
 studio codex                 start the session in Codex instead of Claude Code (say: cutroom)
+studio cut "Project"         a first cut from the project's clips and track, in the house style
 studio layers "Project"      export a finished video as layers, CapCut projects and an editor timeline
 studio skills                share every installed skill between Claude Code, Codex and Doxa Code
 studio motion                open Motion Studio (Remotion) for graphics and text templates
