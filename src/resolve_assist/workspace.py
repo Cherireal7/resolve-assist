@@ -77,6 +77,14 @@ Higgsfield (AI images/clips, costs credits) → Motion Studio (`~/Documents/Gith
 animated graphics, text overlays, `npm run make -- <config> --to-resolve`) → this workspace + your editor
 (edit, grade, captions, deliver). Full guide: `~/Documents/Github/motion-studio/docs/PIPELINE.md`.
 
+HyperFrames (`~/Documents/Github/hyperframes-studio`, HTML rendered to video, free and local) is the second
+graphics engine: use it for one-off graphics, kinetic type, charts, UI demos and ready-made registry blocks;
+keep Motion Studio for its existing templates. Start with the `/hyperframes:hyperframes` skill, work in
+`projects/<name>/` there, copy fonts and sounds from `library/` into the project's `assets/` (Amharic needs an
+`@font-face` to a library Ethiopic font), render to MP4 and drop it in this workspace's project `inbox/`.
+Never use its paid parts (cloud render, HeyGen sign-in, Pro templates, `reverse-any-video`, `style-sampling`)
+without asking. Details: that repo's `README.md`.
+
 ## Folders
 | Folder | What |
 |---|---|
