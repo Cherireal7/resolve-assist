@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Export a finished video as separate layers, a CapCut project and a timeline for the Tibeb editor.
+
+usage: studio layers "<Project>"        (reads projects/<Project>/build/layers.json)
+
+layers.json:
+  {"name": "Before You Win", "duration": 48.27, "fps": 30, "size": [1080, 1920],
+   "grade": "<ffmpeg filter or empty>",
+   "shots":  [{"file": "footage/full/1629.mp4", "start": 0.0, "in": 1.6, "move": "hold|in|push", "name": "walk selfie"}, ...],
+   "fx":     {"project": "~/Documents/Github/hyperframes-studio/projects/<page>",
+              "groups": [{"name": "road-text", "track": "Text in the scene", "ids": ["wRoad"], "start": 3.46, "end": 6.31, "alpha": true}, ...],
+              "captions": {"class": "txt", "key_class": "key", "track": "Captions (styled)", "extra_ids_first_run": ["crown"], "y": 61.7}},
+   "files":  [{"file": "build/cards2.mov", "track": "Cards", "start": 13.0, "length": 4.2, "name": "cards"}, ...],
+   "audio":  [{"file": "music/track.mp3", "track": "Music", "start": 0, "volume": 0.8, "fadeOut": 0.6}]}
+
+Shots are cut and graded one clip each. Each fx group is rendered alone from the HyperFrames page (the other groups hidden, the
+same timeline scrubbed over the group's time range): transparent ProRes 4444 for CapCut plus a WebM copy for the app, or MP4 when
+"alpha" is false. Captions found on the page become one styled clip per run and one retypeable text each.
+"""
+import json, os, re, shutil, subprocess, sys
+from pathlib import Path
+HOME = Path.home(); WS = Path(os.environ.get("RESOLVE_ASSIST_OUTPUT", HOME / "Documents/resolve-assist"))
+HF = HOME / "Documents/Github/hyperframes-studio/node_modules/.bin/hyperframes"
+if len(sys.argv) < 2: sys.exit(__doc__)
+project = sys.argv[1]; P = WS / "projects" / project; spec = json.loads((P / "build/layers.json").read_text())
+slug = re.sub(r"[^a-z0-9]+", "-", project.lower()).strip("-") or "project"
+OUT = P / "handoff"; END = float(spec["duration"]); W, H = spec.get("size", [1080, 1920]); FPS = spec.get("fps", 30)
+for d in ("video", "motion", "motion-webm", "audio", "text"): (OUT / d).mkdir(parents=True, exist_ok=True)
+items, titles = [], []
+def run(cmd, **kw): return subprocess.run(cmd, check=True, **kw)
+def safe(s): return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+
+# shots
+shots = spec.get("shots", []); grade = spec.get("grade") or "null"
+for i, s in enumerate(shots):
+    d = round((shots[i + 1]["start"] if i + 1 < len(shots) else s.get("end", END)) - s["start"], 3)
+    z = {"push": f"1+0.07*t/{d}", "in": "1.35", "hold": "1"}[s.get("move", "hold")]
+    f = OUT / "video" / f"{i + 1:02d}-{safe(s.get('name', 'shot'))}.mp4"
+    run(["ffmpeg", "-v", "error", "-y", "-ss", str(s.get("in", 0)), "-t", str(d + 0.05), "-i", str(P / s["file"]), "-vf",
+         f"fps={FPS},scale=w='2*trunc({W // 2}*({z}))':h=-2:eval=frame,crop={W}:{H},{grade},format=yuv420p", "-an", "-t", str(d), "-c:v", "libx264", "-crf", "15", "-preset", "fast", str(f)])
+    items.append({"id": f"shot{i + 1}", "file": f"video/{f.name}", "kind": "video", "track": s.get("track", "Footage"), "start": s["start"], "length": d, "name": s.get("name", f"shot {i + 1}"), "fit": "cover"})
+
+# effect groups from a HyperFrames page
+fx = spec.get("fx")
+if fx:
+    FX = Path(os.path.expanduser(fx["project"])); html = (FX / "index.html").read_text(); groups = list(fx.get("groups", [])); cap = fx.get("captions")
+    all_ids = {i for g in groups for i in g["ids"]}
+    if cap:
+        pat = r'<div id="([\w-]+)" class="%s (\w+) clip" data-start="([\d.]+)" data-duration="([\d.]+)"[^>]*><span[^>]*>(.*?)</span></div>' % re.escape(cap.get("class", "txt"))
+        caps = [(m.group(1), m.group(2) == cap.get("key_class", "key"), float(m.group(3)), float(m.group(4)), re.sub(r"<[^>]+>", "", m.group(5))) for m in re.finditer(pat, html) if m.group(1) not in cap.get("skip", [])]
+        runs, cur = [], []
+        for c in caps:
+            if cur and c[2] - (cur[-1][2] + cur[-1][3]) > 0.2: runs.append(cur); cur = []
+            cur.append(c)
+        if cur: runs.append(cur)
+        for k, r in enumerate(runs):
+            ids = [c[0] for c in r] + (cap.get("extra_ids_first_run", []) if k == 0 else [])
+            groups.append({"name": f"captions-{k + 1}", "track": cap.get("track", "Captions (styled)"), "ids": ids, "start": r[0][2], "end": round(r[-1][2] + r[-1][3], 2), "alpha": True, "captions": True})
+            all_ids.update(ids)
+        for cid, key, a, d, text in caps:
+            titles.append({"id": cid, "text": text.upper() if key else text, "start": a, "length": d, "x": 50, "y": cap.get("y", 61.7), "size": 9 if key else 5.5, "color": "#F5D547" if key else "#FFFFFF", "align": "center"})
+    all_ids.update(fx.get("always_hide", []))
+    TMP = FX.parent / f"{FX.name}-layers-tmp"      # not a hidden folder: the renderer does not serve assets from dot-folders
+    if TMP.exists(): shutil.rmtree(TMP)
+    TMP.mkdir(); os.symlink(FX / "assets", TMP / "assets")
+    for f in ("hyperframes.json", "meta.json", "package.json"):
+        if (FX / f).is_file(): shutil.copy2(FX / f, TMP / f)
+    hook = 'window.__timelines["main"] = tl;\n      tl.seek(0);'
+    if hook not in html: sys.exit("the page must end with:  " + hook)
+    env = dict(os.environ, HYPERFRAMES_NO_TELEMETRY="1")
+    for g in groups:
+        t0, t1 = g["start"], g["end"]; s = html
+        for i in g["ids"] + g.get("shift_also", []):
+            s = re.sub(r'(id="%s"[^>]*?data-start=")([\d.]+)(")' % re.escape(i), lambda m: f'{m.group(1)}{max(0.0, round(float(m.group(2)) - t0, 3))}{m.group(3)}', s)
+        hide = ", ".join(f"#{i}" for i in sorted(all_ids) if i not in g["ids"])
+        if hide: s = s.replace("</style>", f"      {hide} {{ display: none !important; }}\n    </style>", 1)
+        s = re.sub(r'(<div id="root"[^>]*data-duration=")[\d.]+(")', lambda m: f"{m.group(1)}{round(t1 - t0, 3)}{m.group(2)}", s)
+        s = s.replace(hook, f'const outer = gsap.timeline({{ paused: true }}); outer.add(tl.tweenFromTo({t0}, {t1}, {{ ease: "none" }}), 0);\n      window.__timelines["main"] = outer;\n      outer.seek(0);')
+        (TMP / "index.html").write_text(s); alpha = g.get("alpha", True)
+        f = OUT / "motion" / f"{g['name']}.{'mov' if alpha else 'mp4'}"
+        r = subprocess.run([str(HF), "render", "-o", str(f)] + (["--format", "mov"] if alpha else ["--quality", "looks"]), cwd=TMP, env=env, capture_output=True, text=True)
+        if not f.is_file(): sys.exit(f"render failed for {g['name']}: {(r.stdout + r.stderr)[-400:]}")
+        items.append({"id": g["name"], "file": f"motion/{f.name}", "kind": "video", "track": g["track"], "start": t0, "length": round(t1 - t0, 3), "name": g["name"].replace("-", " "), "fit": "cover", "styled_captions": bool(g.get("captions"))})
+        print(f"{g['name']:22s} {t0:6.2f}-{t1:6.2f}  {f.stat().st_size / 1e6:6.1f} MB", flush=True)
+    shutil.rmtree(TMP)
+
+# ready-made layer files and audio
+for k, l in enumerate(spec.get("files", [])):
+    src = P / l["file"]; dst = OUT / "motion" / (safe(l.get("name", src.stem)) + src.suffix); shutil.copy2(src, dst)
+    items.append({"id": f"file{k + 1}", "file": f"motion/{dst.name}", "kind": "video", "track": l["track"], "start": l["start"], "length": l["length"], "name": l.get("name", src.stem), "fit": "cover"})
+for k, a in enumerate(spec.get("audio", [])):
+    src = P / a["file"]; dst = OUT / "audio" / src.name; shutil.copy2(src, dst)
+    items.append({"id": f"audio{k + 1}", "file": f"audio/{dst.name}", "kind": "audio", "track": a.get("track", "Music"), "start": a.get("start", 0), "length": a.get("length", END - a.get("start", 0)), "volume": a.get("volume", 1), "fadeIn": a.get("fadeIn", 0), "fadeOut": a.get("fadeOut", 0)})
+
+# WebM copies of the transparent clips, for the app
+for it in items:
+    if it["file"].endswith(".mov"):
+        w = OUT / "motion-webm" / (Path(it["file"]).stem + ".webm")
+        run(["ffmpeg", "-v", "error", "-y", "-i", str(OUT / it["file"]), "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "30", "-row-mt", "1", "-cpu-used", "4", "-an", str(w)])
+
+tracks_order = []
+for it in items:
+    if it["track"] not in tracks_order: tracks_order.append(it["track"])
+manifest = {"project": project, "format": "9x16" if H > W else "16x9", "size": [W, H], "fps": FPS, "duration": END, "items": items,
+            "notes": ["Rendered effect clips can be moved, trimmed, replaced or deleted; their words cannot be retyped.", "Captions exist as styled clips and as plain text in text/titles.json."]}
+(OUT / "text/titles.json").write_text(json.dumps(titles, indent=1)); (OUT / "manifest.json").write_text(json.dumps(manifest, indent=1))
+
+# timeline for the Tibeb editor (top layer first)
+pre = f"projects/{slug}/handoff/"
+def clip(it):
+    if it["kind"] == "audio": return {"id": it["id"], "kind": "audio", "src": pre + it["file"], "start": it["start"], "length": it["length"], "in": 0, "volume": it.get("volume", 1), "fadeIn": it.get("fadeIn", 0), "fadeOut": it.get("fadeOut", 0)}
+    f = it["file"].replace("motion/", "motion-webm/").replace(".mov", ".webm") if it["file"].endswith(".mov") else it["file"]
+    return {"id": it["id"], "kind": "video", "src": pre + f, "start": it["start"], "length": it["length"], "in": 0, "volume": 0, "fit": "cover", "scale": 1, "x": 0, "y": 0, "opacity": 1, "zoom": 0}
+vis = [t for t in tracks_order if any(i["track"] == t and i["kind"] != "audio" for i in items)]; aud = [t for t in tracks_order if t not in vis]
+tracks = ([{"id": "captext", "name": "Captions (plain text)", "kind": "text", "muted": True, "clips": [{"id": "x" + t["id"], "kind": "text", "text": t["text"], "start": t["start"], "length": t["length"], "style": "editorial", "motion": "rise", "size": t["size"], "color": t["color"], "accent": "#F5D547", "x": 50, "y": t["y"], "align": "center"} for t in titles]}] if titles else [])
+tracks += [{"id": safe(t)[:40], "name": t[:40], "kind": "video", "clips": [clip(i) for i in items if i["track"] == t]} for t in reversed(vis)]
+tracks += [{"id": safe(t)[:40], "name": t[:40], "kind": "audio", "clips": [clip(i) for i in items if i["track"] == t]} for t in aud]
+edit = P / "edit.json"
+if edit.exists() and not (P / "edit.before-layers.json").exists(): shutil.copy2(edit, P / "edit.before-layers.json")
+edit.write_text(json.dumps({"version": 1, "duration": END, "background": "#000000", "credit": "", "tracks": tracks}, indent=1))
+
+# CapCut projects
+try:
+    from resolve_assist.capcut import build_draft
+    r1 = build_draft(OUT, f"{spec.get('name', project)} - layers", native_text=False); print("CapCut:", r1["name"], [(t["name"], t["clips"]) for t in r1["tracks"]])
+    if titles:
+        (OUT / "manifest.json").write_text(json.dumps(dict(manifest, items=[i for i in items if not i.get("styled_captions")]), indent=1))
+        r2 = build_draft(OUT, f"{spec.get('name', project)} - editable text", native_text=True); print("CapCut:", r2["name"], [(t["name"], t["clips"]) for t in r2["tracks"]])
+        (OUT / "manifest.json").write_text(json.dumps(manifest, indent=1))
+except ImportError:
+    print("CapCut project skipped: run with the resolve-assist environment's python.")
+print(len(items), "layers in", OUT, "| edit.json written")
