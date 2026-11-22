@@ -97,8 +97,10 @@ def fcpxml(name: str, size: tuple[int, int], duration: float, tracks: list[dict]
             uri = (root / it["file"]).resolve().as_uri()
             still = it["file"].lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
             has_v, has_a = (tr["kind"] == "Video"), (tr["kind"] == "Audio" or it["file"].lower().endswith(".mp4"))
+            fmt = ' format="r1"' if has_v else ""                      # no backslash inside an f-string expression: Python 3.10 and 3.11 reject it
+            sound = ' audioSources="1" audioChannels="2" audioRate="48000"' if has_a and not still else ""
             assets.append(f'    <asset id="{aid}" name={quoteattr(it["name"])} start="0s" duration="{"0s" if still else t(it["length"])}" hasVideo="{int(has_v)}" hasAudio="{int(has_a and not still)}"'
-                          f'{" format=\"r1\"" if has_v else ""}{" audioSources=\"1\" audioChannels=\"2\" audioRate=\"48000\"" if has_a and not still else ""}>\n'
+                          f'{fmt}{sound}>\n'
                           f'      <media-rep kind="original-media" src={quoteattr(uri)}/>\n    </asset>')
             tag = "video" if still else "asset-clip"
             clips.append(f'            <{tag} ref="{aid}" lane="{lane}" offset="{t(it["start"])}" start="0s" duration="{t(it["length"])}" name={quoteattr(it["name"])}/>')

@@ -308,6 +308,7 @@ class NarrationAndCreditTests(unittest.TestCase):
 
 
 class EditorSupportTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")
     def test_peaks_follow_the_sound_and_are_cached(self):
         from resolve_assist import api
         with tempfile.TemporaryDirectory() as d:

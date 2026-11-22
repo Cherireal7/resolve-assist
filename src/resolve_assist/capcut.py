@@ -27,6 +27,22 @@ IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 STILL_DURATION = 10_800_000_000        # CapCut gives stills a nominal three hours
 
 
+def _still_size(path: Path) -> tuple[int, int] | tuple[()]:
+    """Pixel size of a still when ffprobe is missing: the PNG header, else sips on macOS."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(24)
+        if head[:8] == b"\x89PNG\r\n\x1a\n" and head[12:16] == b"IHDR":
+            return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+        sips = shutil.which("sips")
+        if sips:
+            from .imaging.decode import _sips_size
+            return _sips_size(sips, path)
+    except Exception:
+        pass
+    return ()
+
+
 def drafts_dir() -> Path:
     return Path.home() / "Movies" / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"
 
@@ -186,7 +202,7 @@ def build_draft(handoff: Path, name: str, native_text: bool = True, log=lambda m
             try:
                 pr = probe(dst)
             except Exception:
-                pr = {}
+                pr = dict(zip(("width", "height"), _still_size(dst))) if still else {}
             mw, mh = int(pr.get("width") or w), int(pr.get("height") or h)
             length = float(it["length"])
             speed = {"curve_speed": None, "id": _uid(), "mode": 0, "speed": 1.0, "type": "speed"}
