@@ -533,6 +533,11 @@ def mix(p: dict, cues: list[dict], out: Path, ffmpeg: str, music: Path | None, f
             continue
         if name not in cache:
             cache[name] = _decode(ffmpeg, find_sound(name))
+            mono = [abs(x) for x in cache[name][0]]
+            late = mono.index(max(mono)) / RATE * 1000 if mono else 0.0
+            if late > 20:
+                notes.append(f"'{name}' is loudest {late:.0f} ms after it starts: against a drum hit that sounds like a "
+                             "flam, not one hit; pick a sound with an instant attack for cues on a beat")
             if len(cache[name][0]) / RATE > 4 * beat_s:
                 notes.append(f"'{name}' is {len(cache[name][0]) / RATE:.1f} s long: a sound longer than a bar brings a rhythm of its own")
         sl, sr = cache[name]
