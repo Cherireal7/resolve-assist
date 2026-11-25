@@ -474,3 +474,62 @@ def encode_png_1x1() -> bytes:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BeatGridTests(unittest.TestCase):
+    def test_tempos_have_whole_frame_sixteenths(self):
+        from resolve_assist import beatgrid as bg
+        got = {t["bpm"]: t["sixteenth_frames"] for t in bg.tempos(60)}
+        self.assertEqual({90.0: 10, 100.0: 9, 112.5: 8, 150.0: 6}, {k: got[k] for k in (90.0, 100.0, 112.5, 150.0)})
+        with self.assertRaises(bg.GridError):
+            bg.step_frames(60, 120.5)
+
+    def test_plan_is_frame_exact_and_adds_silence_before_the_drop(self):
+        from resolve_assist import beatgrid as bg
+        p = bg.plan(60, 112.5, bg.parse_sections("intro:4,groove:3,build=spin:3,drop:2,outro:2"))
+        self.assertEqual((p["sixteenth_frames"], p["bar_frames"], p["frames"]), (8, 128, 14 * 128))
+        self.assertEqual([s["duration_ms"] for s in p["sections"]], [8533, 6400, 6400, 4267, 4267])
+        self.assertEqual(sum(s["duration_ms"] for s in p["sections"]), round(p["frames"] / 60 * 1000))
+        spin, drop = p["sections"][2], p["sections"][3]
+        self.assertEqual((spin["name"], spin["kind"], spin["silence_steps"]), ("build", "spin", 4))
+        silent = bg.silent_steps(p)
+        self.assertEqual(silent, set(range(drop["start_step"] - 4, drop["start_step"])))
+        self.assertFalse(silent & set(p["hits"]["steps"]))
+        self.assertTrue(set(range(drop["start_step"], drop["start_step"] + 32)) <= set(p["hits"]["steps"]))
+        self.assertEqual(len(p["music_plan"]["sections"]), 5)
+        self.assertIn("GRID.t", bg.grid_js(p))
+
+    def test_check_names_each_broken_rule(self):
+        from resolve_assist import beatgrid as bg
+        p = bg.plan()
+        self.assertTrue(bg.check(p, bg.starter_cues(p))["ok"])
+        cues = bg.starter_cues(p) + [
+            {"pos": "2.1.2", "kind": "text", "text": "one two three four five"},      # empty sixteenth, too many words
+            {"frame": 101, "kind": "effect"},                                          # between sixteenths
+            {"section": "spin", "step": 46, "kind": "effect"},                         # in the silence
+            {"pos": "3.2.1", "kind": "music-cut"},                                     # mid-bar music cut
+            {"section": "intro", "step": 0, "kind": "text", "text": "hi"},             # shares the first cut's hit
+        ]
+        rules = [x["rule"] for x in bg.check(p, cues)["problems"]]
+        for rule in ("on a hit", "few words", "on the grid", "silence", "cut on the one", "one at a time"):
+            self.assertIn(rule, rules)
+        gaps = bg.check(p, [c for c in bg.starter_cues(p) if c["kind"] != "slide"])["problems"]
+        self.assertEqual([x["rule"] for x in gaps], ["the drop never holds"])
+
+    def test_track_sits_on_the_grid_and_is_silent_before_the_drop(self):
+        from resolve_assist import beatgrid as bg
+        from resolve_assist.analysis.beats import read_wav_mono
+        p = bg.plan(60, 150, bg.parse_sections("intro:1,spin:1,drop:1,outro:1"))
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "t.wav"
+            info = bg.render(p, out)
+            self.assertEqual(info["samples"], p["frames"] * bg.RATE // 60)
+            mono, rate = read_wav_mono(out)
+        drop = p["sections"][2]["start_step"]
+        a, b = bg.step_sample(p, drop - 4) + int(0.01 * rate), bg.step_sample(p, drop)
+        self.assertLess(max(abs(x) for x in mono[a:b]), 1e-4)
+        m = bg.measure(p, mono, rate)
+        self.assertEqual(m["offset_ms"], 0)
+        self.assertGreaterEqual(len(set(m["hits"]) & set(p["hits"]["steps"])), 0.9 * len(p["hits"]["steps"]))
+        late = bg.measure(p, [0.0] * int(0.03 * rate) + mono, rate)
+        self.assertEqual(late["offset_ms"], 30)

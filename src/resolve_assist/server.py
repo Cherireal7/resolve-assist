@@ -362,6 +362,18 @@ def commons_add(project: str, title: str, name_hint: str = "") -> str:
 
 
 @mcp.tool()
+def beat_grid(action: str = "plan", project: str = "", fps: float = 60.0, bpm: float = 112.5, sections: str = "",
+              music: str = "", shift_ms: float | None = None) -> str:
+    """Music-led video on a frame-exact beat grid (music first, the edit follows it). action: tempos (tempos
+    where a sixteenth is whole frames), plan (sections 'intro:4,groove:3,spin:3,drop:2,outro:2' in bars ->
+    build/grid.json, grid.md, grid.js, music-plan.json, cues.json), track (free local percussion track),
+    hits (measure a track made elsewhere), check (cues.json against the rules), mix (music + one sound per
+    cue on its frame, about -14 LUFS). Show the plan table and wait for the user's OK before building."""
+    return _run(api.beat_grid, action=action, project=project, fps=fps, bpm=bpm, sections=sections, music=music,
+                shift_ms=shift_ms)
+
+
+@mcp.tool()
 def project_credit(project: str, file: str, source: str = "", license: str = "", author: str = "") -> str:
     """Record source, licence and author for any third-party file in a project (stock clip, music, map)."""
     return _run(api.project_credit, project=project, file=file, source=source, license=license, author=author)

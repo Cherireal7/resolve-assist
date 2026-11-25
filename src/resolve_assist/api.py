@@ -860,6 +860,98 @@ def commons_add(project: str, title: str, name_hint: str = "") -> dict:
     return _add(project, title, name_hint)
 
 
+def beat_grid(action: str = "plan", project: str = "", fps: float = 60.0, bpm: float = 112.5, sections: str = "",
+              music: str = "", shift_ms: float | None = None) -> dict:
+    """Music-led videos on a frame-exact beat grid. Files live in projects/<project>/build and music.
+
+    tempos: tempos where a sixteenth is a whole number of frames at `fps` (no project needed).
+    plan:   sections ('intro:4,groove:3,spin:3,drop:2,outro:2', bars; name=kind:bars to rename) -> build/grid.json,
+            grid.md (the table), grid.js (for HTML compositions), music-plan.json (for a music generator) and a
+            starter build/cues.json when there is none.
+    track:  a free percussion track for the plan, made here -> music/grid-track.wav.
+    hits:   measure a track made elsewhere (`music`): its offset from the grid and the sixteenths with a hit;
+            the plan then checks cues against those.
+    check:  build/cues.json against the rules (on the grid, on a hit, one at a time, few words, silence, drop).
+    mix:    music (`music`, default the local track) plus each cue's sound on its frame -> music/grid-mix.wav.
+    """
+    from . import beatgrid as bg
+    if action == "tempos":
+        return {"fps": fps, "tempos": bg.tempos(fps)}
+    from .workspace import new_project as _new
+    if not project.strip():
+        raise ValueError("name the project")
+    proj = Path(_new(project)["project"])
+    build = proj / "build"
+    build.mkdir(exist_ok=True)
+    grid_file, cues_file = build / "grid.json", build / "cues.json"
+
+    def load() -> dict:
+        if not grid_file.is_file():
+            raise ValueError("no plan yet: run the plan action first")
+        return json.loads(grid_file.read_text(encoding="utf-8"))
+
+    def cues() -> list[dict]:
+        if not cues_file.is_file():
+            raise ValueError(f"no cue sheet: {cues_file}")
+        data = json.loads(cues_file.read_text(encoding="utf-8"))
+        return data["cues"] if isinstance(data, dict) else data
+
+    def inside(rel: str) -> Path:
+        p = (proj / rel).resolve() if not Path(rel).expanduser().is_absolute() else None
+        if p is None or proj.resolve() not in p.parents or not p.is_file():
+            from .paths import check_input_audio
+            return check_input_audio(rel)
+        return p
+
+    if action == "plan":
+        secs = bg.parse_sections(sections) if sections.strip() else None
+        if secs is None and (build / "sections.json").is_file():
+            secs = json.loads((build / "sections.json").read_text(encoding="utf-8"))
+        p = bg.plan(fps, bpm, secs, title=proj.name)
+        grid_file.write_text(json.dumps(p, indent=1), encoding="utf-8")
+        (build / "grid.md").write_text(f"# {proj.name}: the grid\n\n" + bg.table(p), encoding="utf-8")
+        (build / "grid.js").write_text(bg.grid_js(p), encoding="utf-8")
+        (build / "music-plan.json").write_text(json.dumps(p["music_plan"], indent=1), encoding="utf-8")
+        if not cues_file.exists():
+            cues_file.write_text(json.dumps(bg.starter_cues(p), indent=1), encoding="utf-8")
+        return {"grid": str(grid_file), "table": bg.table(p), "music_plan": str(build / "music-plan.json"),
+                "grid_js": str(build / "grid.js"), "cues": str(cues_file), "seconds": p["seconds"], "frames": p["frames"]}
+    p = load()
+    if action == "track":
+        return bg.render(p, proj / "music" / "grid-track.wav")
+    ffmpeg = find_ffmpeg()
+    if action == "check":
+        res = bg.check(p, cues())
+        res["hits_from"] = p["hits"]["source"]
+        return res
+    if not ffmpeg:
+        raise ValueError("this needs ffmpeg (brew install ffmpeg)")
+    if action == "hits":
+        if not music.strip():
+            raise ValueError("give the music file to measure")
+        src = inside(music)
+        m = bg.measure(p, bg._decode(ffmpeg, src, 1, 22050)[0], 22050)
+        p["hits"] = {"source": src.name, "steps": m["hits"], "offset_ms": m["offset_ms"]}
+        grid_file.write_text(json.dumps(p, indent=1), encoding="utf-8")
+        (build / "grid.js").write_text(bg.grid_js(p), encoding="utf-8")
+        return {**m, "hits": len(m["hits"]), "grid": str(grid_file)}
+    if action == "mix":
+        from .library.build import library_dir
+        src = inside(music) if music.strip() else proj / "music" / "grid-track.wav"
+        if not src.is_file():
+            raise ValueError("no music: run the track action, or pass a music file")
+
+        def find_sound(name: str) -> Path:
+            lib = library_dir() / "sfx" / f"{safe_name(Path(name).stem)}.wav"
+            return lib if lib.is_file() and "/" not in name else inside(name)
+
+        if shift_ms is None:                                   # a measured track is shifted onto the grid
+            shift_ms = -float(p["hits"].get("offset_ms", 0)) if p["hits"].get("source") == src.name else 0.0
+        return {**bg.mix(p, cues(), proj / "music" / "grid-mix.wav", ffmpeg, src, find_sound, float(shift_ms)),
+                "music": src.name, "music_shift_ms": shift_ms}
+    raise ValueError("action must be one of: tempos, plan, track, hits, check, mix")
+
+
 def project_credit(project: str, file: str, source: str = "", license: str = "", author: str = "") -> dict:
     from .workspace import project_credit as _credit
     return _credit(project, file, source, license, author)

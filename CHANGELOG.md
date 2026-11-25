@@ -4,6 +4,17 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (beat grid)
+- `beatgrid.py`, `grid` (CLI), `beat_grid` (MCP), `studio grid`: music-led videos on a tempo where a sixteenth
+  note is a whole number of frames. `tempos` lists the tempos for a frame rate; `plan` lays sections on the grid
+  and writes `build/grid.json`, `grid.md`, `grid.js` (for HTML compositions), `music-plan.json` (sections with
+  exact milliseconds for a music generator) and a starter `cues.json`; `track` makes a free percussion track on
+  the exact frames with a hard beat of silence before a drop; `hits` measures a track made elsewhere (offset
+  from the grid, sixteenths with a hit); `check` tests a cue sheet (on the grid, on a hit, one gesture per hit,
+  at most four words, nothing in the silence, music cut on a bar line, one cut per hit on a drop) and names a
+  fix; `mix` puts one sound per cue on its frame over the music at about -14 LUFS. Stdlib only; `hits` and
+  `mix` decode through ffmpeg.
+
 ### Added (picture plates)
 - `tools/plates/`: two macOS helpers (Swift, Apple Vision, offline) that turn a flat picture into the layers
   a 2.5D picture tile needs. `subject` cuts the subject out and fills the hole behind it (`--roi`,

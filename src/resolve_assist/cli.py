@@ -167,6 +167,14 @@ def main(argv: list[str] | None = None) -> int:
     cs = sub.add_parser("commons", help="search Wikimedia Commons, or add an image to a project with its licence")
     cs.add_argument("query", help="search words, or with --add the file title / page URL")
     cs.add_argument("--add", metavar="PROJECT")
+    gr = sub.add_parser("grid", help="beat grid for music-led videos: tempos, plan, track, hits, check, mix")
+    gr.add_argument("action", choices=("tempos", "plan", "track", "hits", "check", "mix"))
+    gr.add_argument("project", nargs="?", default="")
+    gr.add_argument("--fps", type=float, default=60.0)
+    gr.add_argument("--bpm", type=float, default=112.5)
+    gr.add_argument("--sections", default="", help="name:bars,... e.g. intro:4,groove:3,spin:3,drop:2,outro:2")
+    gr.add_argument("--music", default="", help="a track made elsewhere (hits, mix)")
+    gr.add_argument("--shift-ms", type=float, default=None, help="mix: move the music by this much")
     cr = sub.add_parser("credit", help="record source/licence/author for a project file")
     cr.add_argument("project")
     cr.add_argument("file")
@@ -311,6 +319,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "narrate":
             from pathlib import Path as _P
             _print(api.narrate(args.project, _P(args.script).read_text(encoding="utf-8"), args.name, args.voice, args.rate, args.provider))
+        elif args.cmd == "grid":
+            res = api.beat_grid(args.action, args.project, args.fps, args.bpm, args.sections, args.music, args.shift_ms)
+            if args.action == "plan":
+                print(res.pop("table"))
+            _print(res)
         elif args.cmd == "commons":
             _print(api.commons_add(args.add, args.query) if args.add else api.commons_search(args.query))
         elif args.cmd == "cutout":

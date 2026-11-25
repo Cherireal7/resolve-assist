@@ -48,6 +48,9 @@ case "$cmd" in
     fi
     [[ -n "$CH" ]] && export CODEX_HOME="$CH"
     STUDIO_EDITOR="$EDITOR_APP" exec codex "$@" ;;
+  grid)
+    [[ $# -ge 1 ]] || { say 'Usage: studio grid tempos|plan|track|hits|check|mix "Project" [--bpm 112.5 --fps 60 --sections intro:4,groove:3,spin:3,drop:2,outro:2] [--music file]'; exit 2; }
+    need_ra; exec "$RA" grid "$@" ;;
   skills) exec "$ASSIST/scripts/skills-sync" "$@" ;;
   cut)
     [[ $# -ge 1 ]] || { say 'Usage: studio cut "Project" [--clips folder-or-files] [--track file] [--shot 2.6] [--from-plan]   (a first cut in the house style)'; exit 2; }
@@ -119,6 +122,7 @@ studio prep <video> "Name"   talking-head clip: cut silences, transcript, open t
 studio codex                 start the session in Codex instead of Claude Code (say: cutroom)
 studio cut "Project"         a first cut from the project's clips and track, in the house style
 studio layers "Project"      export a finished video as layers, CapCut projects and an editor timeline
+studio grid plan "Project"   music-led video on a beat grid: tempos, plan, track, hits, check, mix
 studio skills                share every installed skill between Claude Code, Codex and Doxa Code
 studio motion                open Motion Studio (Remotion) for graphics and text templates
 studio make <config.json>    render a Motion Studio config (add --to-resolve to file it in the library)
