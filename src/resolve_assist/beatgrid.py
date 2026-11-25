@@ -23,7 +23,7 @@ import subprocess
 import wave
 from pathlib import Path
 
-from .dsp import decay, fade, filt, mix as dsp_mix, noise, reverb, soft_clip, tone
+from .dsp import decay, fade, filt, midi_freq, mix as dsp_mix, noise, pluck as dsp_pluck, reverb, soft_clip, tone
 
 RATE = 48000
 STEPS_PER_BEAT = 4
@@ -45,6 +45,7 @@ KINDS = {
     "outro": ("One last heavy hit, a few sparse echoes, a clean ending.",
               ["melody", "vocals", "fade-out loop"]),
     "pulse": ("A dry hit on every beat, nothing else.", ["melody", "vocals"]),
+    "pluck": ("A warm plucked string on every beat over a soft pad, no drums yet.", ["drums", "vocals", "sub bass"]),
     "silence": ("Silence.", []),
 }
 CUE_KINDS = ("text", "effect", "cut", "slide", "music-cut")
@@ -190,7 +191,7 @@ GROOVE = {"slap": "x..x..x.x..x..x.", "clap": "....x.......x...", "rim": "..x..x
           "shaker": "x.x.x.x.x.x.x.x."}
 DROP = {"kick": "x..x..x.x..x..x.", "snare": "....x.......x...", "rim": "..x...x...x...x.", "hat": "xxxxxxxxxxxxxxxx"}
 LEVEL = {"slap": 0.6, "clap": 0.6, "rim": 0.45, "kick": 0.9, "shaker": 0.2, "snare": 0.7, "hat": 0.36, "tom": 0.8,
-         "tom_hi": 0.75, "tom_lo": 0.85, "boom": 1.0, "sub": 1.0}
+         "tom_hi": 0.75, "tom_lo": 0.85, "boom": 1.0, "sub": 1.0, "pluck": 0.9}
 PAN = {"slap": -0.15, "clap": 0.1, "rim": -0.3, "shaker": 0.35, "hat": 0.3, "tom_hi": -0.35, "tom_lo": 0.35}
 AUDIBLE = 0.3               # a step counts as a hit when something at least this loud starts on it
 
@@ -205,6 +206,9 @@ def events(p: dict) -> list[tuple[int, str, float]]:
             for k in range(0, live, 4):
                 ev.append((a + k, "tom", 1.0 if k % 16 == 0 else 0.8))
                 ev.append((a + k, "slap", 0.5))
+        elif kind == "pluck":
+            for k in range(0, live, 4):
+                ev.append((a + k, "pluck", 1.0 if k % 16 == 0 else 0.85))
         elif kind == "groove":
             for k in range(live):
                 rise = 0.7 + 0.3 * k / max(1, live - 1)
@@ -277,6 +281,21 @@ def _kit(seed: int) -> dict[str, list[float]]:
             "tom": tom(170), "tom_hi": tom(225), "tom_lo": tom(128), "boom": boom, "sub": sub}
 
 
+# One chord per bar for the plucked intro (F minor, E flat, D flat, C), a bass string and a rising top line.
+PLUCK_BARS = [(41, (65, 68, 72, 77)), (39, (63, 67, 70, 75)), (37, (61, 65, 68, 73)), (36, (60, 64, 67, 72))]
+
+
+def _plucks(seed: int) -> dict[tuple[int, int], list[float]]:
+    out = {}
+    for b, (bass, tops) in enumerate(PLUCK_BARS):
+        for k, top in enumerate(tops):
+            note = dsp_pluck(midi_freq(top), 1.4, RATE, seed + top, damp=0.997, bright=0.5)
+            if k == 0:
+                dsp_mix(note, dsp_pluck(midi_freq(bass + 12), 1.8, RATE, seed + bass, damp=0.998, bright=0.35), 0, 0.8)
+            out[(b, k)] = reverb(decay(note, RATE, 1.2, 0.001), RATE, tail=0.9, wet=0.22)
+    return out
+
+
 def step_sample(p: dict, step: float) -> int:
     return int(round(step * p["sixteenth_frames"] / p["fps"] * RATE))
 
@@ -286,8 +305,12 @@ def render(p: dict, path: Path, seed: int = 7) -> dict:
     total = step_sample(p, p["steps"])
     left, right = [0.0] * total, [0.0] * total
     kit = _kit(seed)
+    plucks = _plucks(seed) if any(s["kind"] == "pluck" for s in p["sections"]) else {}
     for step, inst, g in events(p):
         at = step_sample(p, step)
+        if inst == "pluck":
+            local = step - section_at(p, step)["start_step"]
+            kit["pluck"] = plucks[(local // 16 % len(PLUCK_BARS), local % 16 // 4)]
         sound, level, pn = kit[inst], g * LEVEL[inst], PAN.get(inst, 0.0)
         gl, gr = level * math.sqrt((1 - pn) / 2) * 1.414, level * math.sqrt((1 + pn) / 2) * 1.414
         for i in range(min(len(sound), total - at)):
@@ -295,12 +318,16 @@ def render(p: dict, path: Path, seed: int = 7) -> dict:
             left[at + i] += x * gl
             right[at + i] += x * gr
     for s in p["sections"]:                               # the drone under an intro: steady, no rhythm of its own
-        if s["kind"] != "intro":
+        if s["kind"] not in ("intro", "pluck"):
             continue
         a, b = step_sample(p, s["start_step"]), step_sample(p, s["start_step"] + s["steps"] - s["silence_steps"])
         n = b - a
-        drone = [x + 0.5 * y for x, y in zip(tone(87.31, n, RATE, "saw"), tone(130.81, n, RATE, "saw"))]
-        drone = fade(filt(filt(drone, "lp", 420, RATE), "hp", 70, RATE), RATE, 0.4, 0.08)
+        if s["kind"] == "pluck":                          # a soft, bright pad instead of the dark drone
+            drone = [x + 0.7 * y + 0.5 * z for x, y, z in zip(tone(174.61, n, RATE), tone(261.63, n, RATE), tone(349.23, n, RATE, "triangle"))]
+            drone = fade(filt(drone, "lp", 1200, RATE), RATE, 0.6, 0.25)
+        else:
+            drone = [x + 0.5 * y for x, y in zip(tone(87.31, n, RATE, "saw"), tone(130.81, n, RATE, "saw"))]
+            drone = fade(filt(filt(drone, "lp", 420, RATE), "hp", 70, RATE), RATE, 0.4, 0.08)
         for i, x in enumerate(drone):
             left[a + i] += x * 0.10
             right[a + i] += x * 0.10

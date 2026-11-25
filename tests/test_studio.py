@@ -533,3 +533,11 @@ class BeatGridTests(unittest.TestCase):
         self.assertGreaterEqual(len(set(m["hits"]) & set(p["hits"]["steps"])), 0.9 * len(p["hits"]["steps"]))
         late = bg.measure(p, [0.0] * int(0.03 * rate) + mono, rate)
         self.assertEqual(late["offset_ms"], 30)
+
+    def test_plucked_intro_has_a_hit_on_every_beat_and_no_drums(self):
+        from resolve_assist import beatgrid as bg
+        p = bg.plan(60, 112.5, bg.parse_sections("intro=pluck:2,drop:1"), )
+        self.assertEqual({inst for step, inst, gain in bg.events(p) if step < 32}, {"pluck"})
+        self.assertEqual([s for s in p["hits"]["steps"] if s < 28], list(range(0, 28, 4)))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(bg.render(p, Path(d) / "t.wav")["samples"], p["frames"] * bg.RATE // 60)
