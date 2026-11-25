@@ -165,6 +165,8 @@ Use both graphics engines in the same video, each for what it does best:
   screen/camera/mic). `obs_stop_recording` returns the file and indexes it; then `import_assets` or a kit.
 """
 
+_CREDIT_RULE = '- Every video ends with the credit "Edit by Cheri" (end card or final seconds). Check a last frame for it.'
+
 PROJECT_NOTES = """# {name}
 
 - Created: {date}
@@ -184,14 +186,35 @@ PROJECT_NOTES = """# {name}
 """
 
 
+def credit_line() -> str:
+    """The end credit for new videos: `credit=` in ~/.config/studio/config. Empty means no credit; unset keeps
+    the original author's line."""
+    try:
+        for line in (Path.home() / ".config" / "studio" / "config").read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "credit":
+                return value.strip()[:80]
+    except OSError:
+        pass
+    return "Edit by Cheri"
+
+
+def workspace_guide() -> str:
+    credit = credit_line()
+    rule = (f'- Every video ends with the credit "{credit}" (end card or final seconds). Check a last frame for it.' if credit
+            else "- Videos carry no end credit unless the user asks for one.")
+    return WORKSPACE_GUIDE.replace(_CREDIT_RULE, rule)
+
+
 def init_workspace() -> dict:
     root = output_dir()
     root.mkdir(parents=True, exist_ok=True)
     (root / "projects").mkdir(exist_ok=True)
     guide = root / "CLAUDE.md"
-    guide.write_text(WORKSPACE_GUIDE, encoding="utf-8")
-    (root / "README.md").write_text(WORKSPACE_GUIDE, encoding="utf-8")
-    (root / "AGENTS.md").write_text(WORKSPACE_GUIDE, encoding="utf-8")   # the same guide for Codex
+    text = workspace_guide()
+    guide.write_text(text, encoding="utf-8")
+    (root / "README.md").write_text(text, encoding="utf-8")
+    (root / "AGENTS.md").write_text(text, encoding="utf-8")   # the same guide for Codex
     return {"workspace": str(root), "guide": str(guide)}
 
 

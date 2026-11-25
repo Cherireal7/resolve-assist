@@ -541,3 +541,21 @@ class BeatGridTests(unittest.TestCase):
         self.assertEqual([s for s in p["hits"]["steps"] if s < 28], list(range(0, 28, 4)))
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(bg.render(p, Path(d) / "t.wav")["samples"], p["frames"] * bg.RATE // 60)
+
+
+class CreditTests(unittest.TestCase):
+    def test_credit_comes_from_the_config_and_can_be_empty(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Path(d) / ".config" / "studio"
+            cfg.mkdir(parents=True)
+            with mock.patch.object(Path, "home", return_value=Path(d)):
+                self.assertEqual(workspace.credit_line(), "Edit by Cheri")
+                self.assertIn('"Edit by Cheri"', workspace.workspace_guide())
+                (cfg / "config").write_text("editor=none\ncredit=Made at Doxa\n")
+                self.assertEqual(workspace.credit_line(), "Made at Doxa")
+                self.assertIn('"Made at Doxa"', workspace.workspace_guide())
+                self.assertNotIn("Edit by Cheri", workspace.workspace_guide())
+                (cfg / "config").write_text("credit=\n")
+                self.assertEqual(workspace.credit_line(), "")
+                self.assertIn("no end credit", workspace.workspace_guide())

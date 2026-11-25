@@ -4,6 +4,12 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added (sharing the studio)
+- The end credit is a setting: `credit=` in `~/.config/studio/config`. The workspace guide and the hand-off
+  use it; an empty value means no credit; without the line the original "Edit by Cheri" stays.
+- Grid track: section kind `pluck` (a plucked string on every beat over a soft pad, no drums).
+- `grid mix` warns about sounds whose loudest point comes late (they flam against a drum hit).
+
 ### Added (beat grid)
 - `beatgrid.py`, `grid` (CLI), `beat_grid` (MCP), `studio grid`: music-led videos on a tempo where a sixteenth
   note is a whole number of frames. `tempos` lists the tempos for a frame rate; `plan` lays sections on the grid

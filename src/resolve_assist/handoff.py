@@ -211,7 +211,8 @@ def build(project_dir: Path, fmt: str = "9x16", motion_dir: Path | None = None, 
                 (otio_audio if track["kind"] == "audio" else otio_video).append(
                     {"name": track["name"] + (f" {li + 1}" if li else ""), "kind": "Audio" if track["kind"] == "audio" else "Video", "items": entries})
 
-    credit = doc.get("credit", "Edit by Cheri")
+    from .workspace import credit_line
+    credit = doc.get("credit", credit_line())
     if credit and motion_dir and (motion_dir / "scripts" / "render.mjs").is_file():
         cfg = out / "text" / "credit.render.json"
         cfg.write_text(json.dumps({"template": "Timeline", "format": fmt, "name": f"handoff-{_slug(project_dir.name)}-credit", "alpha": True,
