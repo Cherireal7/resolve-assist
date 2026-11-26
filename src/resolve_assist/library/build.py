@@ -266,9 +266,13 @@ def scan_user_folders(root: Path) -> list[dict]:
         d = root / folder
         if not d.is_dir():
             continue
-        for f in sorted(d.rglob("*") if folder == "fonts" else d.iterdir()):   # fonts sit in family folders
+        nested = folder in ("fonts", "user-sfx")   # fonts sit in family folders; sfx in harvested/<video>/
+        for f in sorted(d.rglob("*") if nested else d.iterdir()):
+            if folder == "user-sfx" and (f.suffix.lower() not in {".wav", ".mp3"} or "inspo-videos" in f.parts):
+                continue   # harvested sounds sit beside their stills and source videos: index only the audio
             if f.is_file() and not f.name.startswith(".") and f.suffix.lower() in USER_EXTS:
-                words = [w for w in f.stem.replace("_", "-").split("-") if w and not w.isdigit()]
+                sub = [w for p in f.relative_to(d).parts[:-1] for w in p.split("-")] if folder == "user-sfx" else []
+                words = sub + [w for w in f.stem.replace("_", "-").split("-") if w and not w.isdigit()]
                 alpha = f.suffix.lower() == ".mov" and category != "footage"  # motion renders: ProRes 4444
                 tags = list(dict.fromkeys([*folder.split("/"), *extra, *words,
                                            *(["transparent", "overlay"] if alpha else [])]))
